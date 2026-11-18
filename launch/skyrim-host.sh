@@ -7,7 +7,9 @@
 #   skyrim-host.sh password   choose a new password (applies at the next server start)
 set -u
 SKYRIM_HOME="$HOME/Games/skyrim"
-SERVER_DIR=$(/bin/ls -d "$HOME"/Games/skyrim-together-*-mac/files/SkyrimTogetherReborn 2>/dev/null | /usr/bin/head -1)
+# The server of the build the game will use: ST_VERSION=1.8.4-plus hosts with the Plus build (Host Co-op Plus.app)
+export ST_VERSION="${ST_VERSION:-1.8.4}"
+SERVER_DIR=$(/bin/ls -d "$HOME/Games/skyrim-together-$ST_VERSION"{-sse1.6.1170,}-mac/files/SkyrimTogetherReborn 2>/dev/null | /usr/bin/head -1)
 INI="$SERVER_DIR/config/STServer.ini"
 PWFILE="$SKYRIM_HOME/config/server-password"
 LOG="$SKYRIM_HOME/logs/server.log"
@@ -36,7 +38,14 @@ mkdir -p "$(dirname "$PWFILE")" "$(dirname "$LOG")"
 PASSWORD=$(cat "$PWFILE")
 /usr/bin/sed -i '' -E "s/^sPassword=.*/sPassword=$PASSWORD/; s/^sServerName=.*/sServerName=Skyrim co-op/; s/^uPort=.*/uPort=$PORT/" "$INI"
 
+# A server of the other build (plain or Plus) can't take these players: stop it first
+BUILDFILE="$SKYRIM_HOME/logs/server-build"
+p=$(server_pid)
+if [ -n "$p" ] && [ "$(cat "$BUILDFILE" 2>/dev/null)" != "$ST_VERSION" ]; then
+  kill "$p"; for _ in $(seq 10); do [ -z "$(server_pid)" ] && break; sleep 1; done
+fi
 if [ -z "$(server_pid)" ]; then
+  echo "$ST_VERSION" > "$BUILDFILE"
   (cd "$SERVER_DIR" && /usr/bin/nohup "$WINE" SkyrimTogetherServer.exe </dev/null > "$LOG" 2>&1 &)
   for _ in $(seq 40); do /usr/bin/grep -aq "started on port" "$LOG" 2>/dev/null && break; sleep 1; done
   /usr/bin/grep -aq "started on port $PORT" "$LOG" || { notify "The server didn't start, see $LOG"; exit 1; }

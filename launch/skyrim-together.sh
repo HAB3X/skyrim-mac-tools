@@ -5,7 +5,7 @@
 #   skyrim-together.sh check      report what is ready and what is missing; changes nothing
 set -u
 
-ST_VERSION=1.8.4
+ST_VERSION=${ST_VERSION:-1.8.4}   # "1.8.4-plus" picks the Plus build (Desktop: Skyrim Together Plus.app)
 
 SKYRIM_HOME="$HOME/Games/skyrim"
 export WINEPREFIX="$SKYRIM_HOME/prefix"
