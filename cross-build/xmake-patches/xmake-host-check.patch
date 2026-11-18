@@ -1,0 +1,22 @@
+--- a/toolchains/clang-cl/check.lua
++++ b/toolchains/clang-cl/check.lua
+@@ -41,7 +41,7 @@
+ function main(toolchain)
+ 
+     -- only for windows or linux (msvc-wine)
+-    if not is_host("windows", "linux") then
++    if not is_host("windows", "linux", "macosx") then
+         return
+     end
+ 
+--- a/toolchains/msvc/check.lua
++++ b/toolchains/msvc/check.lua
+@@ -35,7 +35,7 @@
+ function main(toolchain)
+ 
+     -- only for windows or linux (msvc-wine)
+-    if not is_host("windows", "linux") then
++    if not is_host("windows", "linux", "macosx") then
+         return
+     end
+ 

@@ -1,0 +1,21 @@
+#!/bin/bash
+# MSVC rc.exe stand-in (also installed as llvm-rc): llvm-rc for the Mac cross toolchain.
+# - On a Mac, absolute paths (/Users/...) look like "/" options to llvm-rc, so options are passed in "-" form and an
+#   existing absolute path is given after "--" (input) or kept as an option's value.
+# - xmake doesn't hand llvm-rc the Windows SDK include folders (rc.exe gets them through INCLUDE), so they are added
+#   here from the xwin sysroot: windows.h/winres.h etc. resolve as they would with Visual Studio.
+W="$HOME/Developer/xwin/winsysroot"
+sdkinc=$(/bin/ls -d "$W/Windows Kits/10/Include/"* 2>/dev/null | /usr/bin/tail -1)
+vcinc=$(/bin/ls -d "$W/VC/Tools/MSVC/"*/include 2>/dev/null | /usr/bin/tail -1)
+args=(); files=(); want_value=0
+for a in "$@"; do
+  if [ "$want_value" = 1 ]; then args+=("$a"); want_value=0; continue; fi
+  case "$a" in
+    /fo|-fo|/FO|-FO|/i|-i|/I|-I|/d|-d|/D|-D|/u|-u|/U|-U|/c|-c|/C|-C|/l|-l|/L|-L) args+=("-${a#?}"); want_value=1 ;;
+    /*) if [ -e "$a" ]; then files+=("$a"); else args+=("-${a#/}"); fi ;;
+    -*) args+=("$a") ;;
+    *) files+=("$a") ;;
+  esac
+done
+for d in "$sdkinc/um" "$sdkinc/shared" "$sdkinc/ucrt" "$vcinc"; do [ -d "$d" ] && args+=(-I "$d"); done
+exec /opt/homebrew/opt/llvm/bin/llvm-rc "${args[@]}" -- "${files[@]}"

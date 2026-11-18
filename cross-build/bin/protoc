@@ -1,0 +1,8 @@
+#!/bin/bash
+# Host protoc for cross builds: the Windows protoc.exe that xmake built with protobuf-cpp (same version as the
+# library, so generated code matches), run through Wine in a build-only prefix. Mac paths work as-is: Wine resolves
+# /Users/... to Z:\Users\... when the working directory is on Z: (any Mac folder).
+exe=$(/bin/ls -t "$HOME"/.xmake/packages/p/protobuf-cpp/*/*/bin/protoc.exe* 2>/dev/null | /usr/bin/head -1)
+[ -n "$exe" ] || { echo "protoc: no protoc.exe built by xmake yet" >&2; exit 1; }
+export WINEPREFIX="$HOME/Developer/xwin/wineprefix" WINEDEBUG=-all DYLD_FALLBACK_LIBRARY_PATH="$HOME/Games/skyrim/wine/lib:/usr/lib"
+exec "$HOME/Games/skyrim/wine/bin/wine" "$exe" "$@"

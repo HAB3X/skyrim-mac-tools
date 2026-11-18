@@ -1,0 +1,66 @@
+#!/bin/bash
+# MSVC link.exe / lib.exe stand-in for cross-compiling on macOS: lld-link, or llvm-lib in library mode.
+# Library mode: called as lib/lib.exe, given -lib//lib (xmake's archiver), or writing /out:*.lib (CMake uses link.exe
+# as CMAKE_AR without -lib; a linked program or DLL never writes .lib as its output, its import library is /implib:).
+# llvm-lib rejects the linker-only options MSVC's lib.exe ignores (/opt:ref, /incremental:no, ...): they are dropped.
+# Long commands arrive as response files (@file): those are expanded first, so the checks see every argument.
+# Only absolute tool paths: xmake sub-builds may run this with a PATH that lacks the system folders.
+in=()
+for a in "$@"; do
+  if [ "${a#@}" != "$a" ] && [ -f "${a#@}" ]; then
+    while IFS= read -r t; do in+=("$t"); done < <(/usr/bin/xargs -n 1 printf '%s\n' < "${a#@}")
+  else
+    in+=("$a")
+  fi
+done
+
+lib_mode=0
+case "$(/usr/bin/basename "$0")" in lib|lib.exe) lib_mode=1 ;; esac
+for a in "${in[@]}"; do
+  case "$(printf '%s' "$a" | /usr/bin/tr 'A-Z' 'a-z')" in -lib|/lib|[-/]out:*.lib) lib_mode=1 ;; esac
+done
+# Program/DLL links also get compat.lib (runtime pieces MSVC has and this toolchain lacks, see compat/compat.c) and
+# advapi32 (MSVC's default libs include it; CMake packages built here don't record it). Unused objects aren't pulled in.
+# MSVC-only spellings lld-link doesn't take:
+# - /WHOLEARCHIVE:<name> without a path: MSVC finds <name>.lib on the library paths; resolved here to the file.
+# - /LAST:<section>: no lld equivalent; dropped (section order is then checked on the built image, see the notes in
+#   ~/Developer/xwin/README.md for the Skyrim Together launcher).
+if [ "$lib_mode" = 0 ]; then
+  libpaths=(.)
+  for a in "${in[@]}"; do
+    case "$a" in -libpath:*|/libpath:*|-LIBPATH:*|/LIBPATH:*) libpaths+=("${a#*:}") ;; esac
+  done
+  out=(); layoutfile=""
+  for a in "${in[@]}"; do
+    case "$a" in
+      [-/][Ww][Hh][Oo][Ll][Ee][Aa][Rr][Cc][Hh][Ii][Vv][Ee]:*)
+        name=${a#*:}
+        if [ ! -f "$name" ] && [ "${name%.lib}" = "$name" ]; then
+          for d in "${libpaths[@]}"; do
+            [ -f "$d/$name.lib" ] && { name="$d/$name.lib"; break; }
+          done
+        fi
+        out+=("/WHOLEARCHIVE:$name") ;;
+      [-/][Ll][Aa][Ss][Tt]:*)
+        # Only CitizenFX-style loaders use /LAST (Skyrim Together: /LAST:.zdata). What they need is the reserved
+        # game range (.game) first, right after the headers at the fixed image base: say so with /sectionlayout.
+        layoutfile="${TMPDIR:-/tmp}/lld-sectionlayout.$$"
+        printf '.game\n' > "$layoutfile"
+        out+=("/sectionlayout:@$layoutfile") ;;
+      *) out+=("$a") ;;
+    esac
+  done
+  /opt/homebrew/opt/lld/bin/lld-link "${out[@]}" "$HOME/Developer/xwin/compat/compat.lib" advapi32.lib
+  rc=$?
+  [ -n "$layoutfile" ] && /bin/rm -f "$layoutfile"
+  exit $rc
+fi
+
+args=()
+for a in "${in[@]}"; do
+  case "$(printf '%s' "$a" | /usr/bin/tr 'A-Z' 'a-z')" in
+    -lib|/lib|[-/]opt:*|[-/]incremental*|[-/]debug*|[-/]dynamicbase*|[-/]nxcompat*|[-/]profile|[-/]manifest*|[-/]pdb:*|[-/]subsystem:*) ;;
+    *) args+=("$a") ;;
+  esac
+done
+exec /opt/homebrew/opt/llvm/bin/llvm-lib "${args[@]}"

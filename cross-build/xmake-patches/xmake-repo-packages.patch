@@ -1,0 +1,31 @@
+diff --git a/packages/c/cpp-httplib/xmake.lua b/packages/c/cpp-httplib/xmake.lua
+index c70e990ae..c3e590cf9 100644
+--- a/packages/c/cpp-httplib/xmake.lua
++++ b/packages/c/cpp-httplib/xmake.lua
+@@ -65,7 +65,8 @@ package("cpp-httplib")
+     if on_check then
+         on_check(function (package)
+             local pkg_ver = package:version()
+-            if package:is_plat("windows") then
++            -- local change: the host checks below read the build machine (nothing to read on a Mac cross build)
++            if package:is_plat("windows") and is_host("windows") then
+                 local winver = winos.version()
+                 local vs = package:toolchain("msvc"):config("vs")
+                 assert(winver and winver:gt("win8"), "package(httplib): Windows 8 or lower is neither supported nor tested.")
+diff --git a/packages/c/cryptopp/xmake.lua b/packages/c/cryptopp/xmake.lua
+index 5f59b86b8..60d93c29c 100644
+--- a/packages/c/cryptopp/xmake.lua
++++ b/packages/c/cryptopp/xmake.lua
+@@ -71,6 +71,12 @@ package("cryptopp")
+         table.insert(configs, "-DBUILD_SHARED_LIBS=" .. (package:config("shared") and "ON" or "OFF"))
+         table.insert(configs, "-DBUILD_STATIC=" .. (package:config("shared") and "OFF" or "ON"))
+         table.insert(configs, "-DBUILD_SHARED=" .. (package:config("shared") and "ON" or "OFF"))
++        -- local change (Mac cross build): llvm-ml can't assemble x64masm.asm, so use Crypto++'s C++ code paths
++        if package:is_plat("windows") and is_host("macosx") then
++            table.insert(configs, "-DCRYPTOPP_DISABLE_ASM=ON")
++            -- clang-cl is blocked by a hard stop meant for its inline-asm quirks (cryptopp issue #147); asm is off here
++            io.replace("config_os.h", '# error: "Unsupported configuration"', "", {plain = true})
++        end
+ 
+         if package:is_plat("windows") and package:is_arch("arm", "arm64") then
+             table.insert(configs, "-DDISABLE_ASM=ON")

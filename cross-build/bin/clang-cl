@@ -1,0 +1,53 @@
+#!/bin/bash
+# clang-cl stand-in for cross-compiling Windows code on macOS.
+# 1. clang-cl parses an absolute Mac path as an option when it starts like one ("/Users/..." = /U, undefine macro):
+#    existing absolute source files are moved after "--" (end of options). Option values given as a separate
+#    argument (-I /Users/...) stay in place, as does everything after an existing "--".
+# 2. Real compiles (-c with Windows headers available) get what MSVC/CMake-on-Windows would provide implicitly:
+#    -FIintrin.h (MSVC's windows.h makes __movsb & co. intrinsics; MinHook relies on it) and, for C++ without an
+#    explicit /EH, -EHsc (CMake's MSVC default, missing when CMake runs on a Mac). Flag probes (no headers) get neither,
+#    so they keep testing only the flag.
+opts=(); srcs=(); prev=""; compiling=0; headers=0; cxx=0; eh=0
+[ -n "${INCLUDE:-}" ] && headers=1
+while [ $# -gt 0 ]; do
+  a=$1; shift
+  case "$prev" in
+    -I|/I|-D|/D|-U|/U|-imsvc|/imsvc|-include|-Xclang|-o|-FI|/FI|-winsysroot|/winsysroot|--target|-target)
+      opts+=("$a"); prev=""; continue ;;
+  esac
+  case "$a" in
+    --) srcs+=("$@"); break ;;
+    -c|/c) compiling=1 ;;
+    -winsysroot*|/winsysroot*|-imsvc*|/imsvc*) headers=1 ;;
+    -EH*|/EH*) eh=1 ;;
+    -TP|/TP|-Tp*|/Tp*) cxx=1 ;;
+  esac
+  case "$a" in *.cpp|*.cc|*.cxx|*.c++|*.C|*.ixx|*.cppm) cxx=1 ;; esac
+  case "$a" in
+    /*.c|/*.cc|/*.cpp|/*.cxx|/*.c++|/*.C|/*.h|/*.hpp|/*.m|/*.mm|/*.ixx|/*.cppm)
+      if [ -f "$a" ]; then srcs+=("$a"); else opts+=("$a"); fi ;;
+    *) opts+=("$a") ;;
+  esac
+  prev=$a
+done
+for s in "${srcs[@]}"; do case "$s" in *.cpp|*.cc|*.cxx|*.c++|*.C|*.ixx|*.cppm) cxx=1 ;; esac; done
+extra=()
+if [ "$compiling" = 1 ] && [ "$headers" = 1 ]; then
+  extra+=(-FIintrin.h)
+  [ "$cxx" = 1 ] && [ "$eh" = 0 ] && extra+=(-EHsc)
+fi
+# 3. CitizenFX-style loaders (Skyrim Together's immersive_launcher/loader/MemoryLayout.cpp) reserve the game's address
+#    range with "#pragma bss_seg(".game")". MSVC emits that as uninitialized data; clang emits it as 1 GB of zeros, which
+#    would land in the .exe. Mark the section uninitialized in the object, as MSVC's would be.
+obj=""; layout=0
+for a in "${opts[@]}" "${srcs[@]}"; do
+  case "$a" in -Fo*|/Fo*) obj=${a#???} ;; *MemoryLayout.cpp) layout=1 ;; esac
+done
+if [ "$layout" = 1 ] && [ -n "$obj" ]; then
+  if [ ${#srcs[@]} -gt 0 ]; then /opt/homebrew/opt/llvm/bin/clang-cl "${extra[@]}" "${opts[@]}" -- "${srcs[@]}"
+  else /opt/homebrew/opt/llvm/bin/clang-cl "${extra[@]}" "${opts[@]}"; fi || exit
+  /opt/homebrew/opt/llvm/bin/llvm-objcopy --set-section-flags .game=alloc "$obj"
+  exit
+fi
+if [ ${#srcs[@]} -gt 0 ]; then exec /opt/homebrew/opt/llvm/bin/clang-cl "${extra[@]}" "${opts[@]}" -- "${srcs[@]}"; fi
+exec /opt/homebrew/opt/llvm/bin/clang-cl "${extra[@]}" "${opts[@]}"
