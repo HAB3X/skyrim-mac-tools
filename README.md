@@ -11,6 +11,9 @@ prefix (`~/Games/skyrim`).
 
 - `skyrim-play.sh` starts Skyrim at the Mac's current screen size (borderless window), `skyrim-play.sh together`
   starts Skyrim Together instead.
+- `skyrim-host.sh` hosts co-op in one click: starts the server in the background (or reuses it), sets a password,
+  shows the internet and Wi-Fi addresses and the password, copies them to the clipboard, then starts Skyrim Together.
+  `skyrim-host.sh stop` stops the server, `password` picks a new password.
 - `skyrim-together.sh` installs the Skyrim Together build that matches the installed game version into `Data`,
   enables its plugins and starts it. `skyrim-together.sh server` runs a server (UDP 10578), `check` reports what is
   missing.
