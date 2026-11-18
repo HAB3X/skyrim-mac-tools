@@ -17,8 +17,9 @@ prefix (`~/Games/skyrim`).
 - `skyrim-together.sh` installs the Skyrim Together build that matches the installed game version into `Data`,
   enables its plugins and starts it. `skyrim-together.sh server` runs a server (UDP 10578), `check` reports what is
   missing.
-- Both run Wine with msync, switch SSE Engine Fixes' memory manager off for Skyrim Together (it replaces the game's
-  allocator itself) and on for plain Skyrim, and set DXMT's options (pipeline warming, hitch log, Metal-paced 60 fps).
+- Both run Wine with msync and set DXMT's options (pipeline warming, hitch log, Metal-paced 60 fps). SSE Engine Fixes
+  is set aside (`EngineFixes.dll.off`) for Skyrim Together, where it makes other players and NPCs invisible, and put
+  back for plain Skyrim.
 
 Paths are the ones used on the original machine (`~/Games/...`); adjust the variables at the top of each script.
 
