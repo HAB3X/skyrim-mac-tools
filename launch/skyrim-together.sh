@@ -17,9 +17,16 @@ export WINEMSYNC=1
 # DXMT (Metal renderer) = jdrly's gw2-on-mac fork build (~/Games/dxmt-builds/INSTALLED.txt): pre-build the pipelines
 # recorded on earlier runs, log hitches/stats to ~/Games/skyrim/logs, and let Metal pace 60 fps (VSync is broken on
 # ProMotion screens, DXMT issue #26). The previous DXMT is in ~/Games/skyrim/backups/dxmt-9839e55-skyrimmt.
+# Rosetta reports AVX/AVX2 to the game and SKSE plugins (macOS 15+), as CrossOver does by default
+export ROSETTA_ADVERTISE_AVX=1
 export DXMT_WARM="${DXMT_WARM:-all}"
 export DXMT_LOG_PATH="${DXMT_LOG_PATH:-Z:$HOME/Games/skyrim/logs}"
 export DXMT_CONFIG="${DXMT_CONFIG:-d3d11.preferredMaxFrameRate=60;}"
+# Rendering itself as upstream DXMT: the fork's draw/state/resource shortcuts were tuned on Guild Wars 2, and with them
+# Skyrim lost actors and items (invisible). Pacing, warming and the stats above stay. Remove a line to retest that one.
+export DXMT_GETDATA_SKIP_FLUSH=0 DXMT_SKIP_SAME_STATE=0 DXMT_SKIP_EMPTY_SLOTS=0 DXMT_SKIP_REBIND=0
+export DXMT_PSO_MRU=0 DXMT_PSO_TOPOLOGY_KEEP=0 DXMT_DEPTH_PFV=1 DXMT_STENCIL_PFV=1
+export DXMT_MAP_FAST=0 DXMT_UNRETAINED=0 DXMT_RELEASE_POOL=0 DXMT_RESIDENCY_SET=0 DXMT_VIEW_KEY_ARRAY_BIT=0 DXMT_METAL4=0
 # Apple's Metal HUD (fps, frame times) while ~/Games/skyrim/config/metal-hud exists: touch it to show, delete it to hide.
 [ -f "$SKYRIM_HOME/config/metal-hud" ] && export MTL_HUD_ENABLED=1
 WINE="$SKYRIM_HOME/wine/bin/wine"
@@ -118,6 +125,14 @@ case "${1:-play}" in
     for d in d3dx9_42 tbb tbbmalloc; do
       [ -f "$GAMEDIR/$d.dll" ] && export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:+$WINEDLLOVERRIDES;}$d=n,b"
     done
+    # Microsoft's XAudio2 and shader compiler, as SkyrimMT sets them up for SkyrimSE.exe: Wine applies those per program
+    # name, and here the game runs inside SkyrimTogether.exe. Without them some sounds (hits, impacts) don't play.
+    key='HKCU\Software\Wine\AppDefaults\SkyrimTogether.exe\DllOverrides'
+    if ! /usr/bin/grep -q 'AppDefaults\\\\SkyrimTogether.exe\\\\DllOverrides' "$WINEPREFIX/user.reg" 2>/dev/null; then
+      for n in xaudio2_7 x3daudio1_7 xapofx1_5 d3dcompiler_47; do
+        [ -f "$WINEPREFIX/drive_c/windows/system32/$n.dll" ] && "$WINE" reg add "$key" /v "$n" /t REG_SZ /d native,builtin /f >/dev/null 2>&1
+      done
+    fi
     cd "$DATA/SkyrimTogetherReborn" || exit 1
     "$WINE" SkyrimTogether.exe --exePath "$(win_path "$GAMEDIR/SkyrimSE.exe")" > "$LOGS/skyrim-together.log" 2>&1 &
     disown
