@@ -32,7 +32,16 @@ case "${1:-}" in
   password) mkdir -p "$(dirname "$PWFILE")"; new_password; echo "new password: $(cat "$PWFILE") (restart the server)"; exit 0 ;;
 esac
 
-[ -f "$INI" ] || { notify "Skyrim Together isn't set up (no server files)"; exit 1; }
+# Ensure the server config dir exists and has an ini — the server exits silently without it
+mkdir -p "$SERVER_DIR/config"
+DATA_INI="$WINEPREFIX/drive_c/GOG Games/Skyrim Special Edition/Data/SkyrimTogetherReborn/config/STServer.ini"
+if [ ! -f "$INI" ]; then
+  if [ -f "$DATA_INI" ]; then
+    /bin/cp "$DATA_INI" "$INI"
+  else
+    notify "Skyrim Together isn't set up (no server files)"; exit 1
+  fi
+fi
 mkdir -p "$(dirname "$PWFILE")" "$(dirname "$LOG")"
 [ -s "$PWFILE" ] || new_password
 PASSWORD=$(cat "$PWFILE")
@@ -46,7 +55,11 @@ if [ -n "$p" ] && [ "$(cat "$BUILDFILE" 2>/dev/null)" != "$ST_VERSION" ]; then
 fi
 if [ -z "$(server_pid)" ]; then
   echo "$ST_VERSION" > "$BUILDFILE"
-  (cd "$SERVER_DIR" && /usr/bin/nohup "$WINE" SkyrimTogetherServer.exe </dev/null > "$LOG" 2>&1 &)
+  # Keepalive: restart the server automatically if it dies (it exits silently on config/port issues)
+  (while true; do
+    cd "$SERVER_DIR" && "$WINE" SkyrimTogetherServer.exe </dev/null >> "$LOG" 2>&1
+    sleep 2
+  done &)
   for _ in $(seq 40); do /usr/bin/grep -aq "started on port" "$LOG" 2>/dev/null && break; sleep 1; done
   /usr/bin/grep -aq "started on port $PORT" "$LOG" || { notify "The server didn't start, see $LOG"; exit 1; }
 fi
