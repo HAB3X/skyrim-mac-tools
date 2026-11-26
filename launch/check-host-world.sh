@@ -6,6 +6,9 @@
 # 2. The host kicking a player from the player list (FakePlayers kicker / kicked).
 # 3. The same server requiring the host's mods (ModPolicy:bRequireMods): refuses a player without them and names the
 #    missing one, lets one with them in (FakePlayers mods).
+#    Also: another version of a required mod refused (modversions), only the host's chosen kinds of quest shared
+#    (questleader / questmember), the leader's fast travel offered to the party (travelleader / travelmember), quest
+#    progress drifting from the leader's reported (desyncleader / desyncmember).
 # With SOAK_SECONDS set, also two players connected and chatting for that long (FakePlayers soak).
 # 4. With a v1.8.4 server folder (official, or our mac release's): this build joining it in its protocol and chatting
 #    (FakePlayers listen184 / talk184).
@@ -102,11 +105,28 @@ run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=f
 
 echo "== Plus server: the host's mods required"
 if dir=$(start_server "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false\n[ModPolicy]\nbRequireMods=true' mods $'SomeMod.esp\nccBGSSSE001-Fish.esm'); then
-    (cd "$PLAYERS_DIR" && "$WINE" FakePlayers.exe mods 127.0.0.1:10578 2>/dev/null | tr -d '\r' > "$dir/mods.log")
+    run_player "$dir" mods mods
     report "$dir/mods.log"
 else
     FAILED=1
 fi
+
+echo "== Plus server: another version of a required mod"
+if dir=$(start_server "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false\n[ModPolicy]\nbRequireMods=true' modversions $'Sized.esp|12345\nPlain.esp\nccBGSSSE001-Fish.esm'); then
+    (cd "$PLAYERS_DIR" && "$WINE" FakePlayers.exe modversions 127.0.0.1:10578 2>/dev/null | tr -d '\r' > "$dir/modversions.log")
+    report "$dir/modversions.log"
+else
+    FAILED=1
+fi
+
+echo "== Plus server: only the host's chosen kinds of quest are shared"
+run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false\n[Gameplay]\nsSharedQuestTypes=Main,Misc' questleader questmember
+
+echo "== Plus server: party members follow the leader's fast travel"
+run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false' travelleader travelmember
+
+echo "== Plus server: quest progress drifting from the leader's is reported"
+run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false' desyncleader desyncmember
 
 # With SOAK_SECONDS set: two players stay connected and chat for that long (FakePlayers soak)
 if [[ -n "${SOAK_SECONDS:-}" ]]; then
