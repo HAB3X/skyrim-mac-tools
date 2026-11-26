@@ -29,6 +29,12 @@ prefix (`~/Games/skyrim`).
 
 Paths are the ones used on the original machine (`~/Games/...`); adjust the variables at the top of each script.
 
+## play/
+
+`PlaySkyrimTogether.cpp`: the `Play Skyrim Together.exe` in each release zip. It finds Skyrim (Steam or GOG), installs
+the release folder matching the game version into `Data`, enables Skyrim Together's plugins and starts it. Build with
+`cross-build/` (clang-cl) or MSVC; the build line is at the top of the file.
+
 ## mod-set/
 
 A co-op mod set for Skyrim Together (both players install the same): the Keizaal Online Nexus collection without
