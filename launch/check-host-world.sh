@@ -14,6 +14,7 @@
 # 5. A Plus server with the router closed and SkyrimTogetherRelay (from the FakePlayers folder) as its way in: host world
 #    with both players joining through the relay.
 # 6. A player with another Plus release refused, and the host told both versions (FakePlayers oldversion).
+# 7. A required mod listed with its checksum: same size, other contents refused (FakePlayers modchecksums).
 # With SOAK_SECONDS set, also two players connected and chatting for that long (FakePlayers soak).
 # 4. With a v1.8.4 server folder (official, or our mac release's): this build joining it in its protocol and chatting
 #    (FakePlayers listen184 / talk184).
@@ -172,6 +173,14 @@ if dir=$(start_server "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbL
     grep -aq "\[Host\] FakeOldBuild couldn't join: they have Skyrim Together v1.8.4-plus.0" "$dir/server.log" &&
         echo "PASS the host is told which version the player had" || { echo "FAIL the host isn't told the player's version"; FAILED=1; }
     report "$dir/version.log"
+else
+    FAILED=1
+fi
+
+echo "== Plus server: a required mod with the same size and other contents"
+if dir=$(start_server "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false\n[ModPolicy]\nbRequireMods=true' checksums $'Exact.esp|100|0000abcd\nccBGSSSE001-Fish.esm'); then
+    run_player "$dir" checksums modchecksums
+    report "$dir/checksums.log"
 else
     FAILED=1
 fi
