@@ -27,6 +27,10 @@
 #     takes from its own copy (FakePlayers ownbodyowner / ownbodylooter).
 # 13. Trading: an offer the giver doesn't hold refused, an offer change unconfirming the other side, and a confirmed
 #     trade moving the items once (FakePlayers tradeleader / trademember).
+# 14. A member's follower goes to the member's game, the leader can't claim it, and it is free again once dismissed
+#     (FakePlayers companionleader / companionmember).
+# 15. An activator a script opened is open for a player entering the cell later; one that never changed stays as it was
+#     (FakePlayers activatorfirst / activatorlater).
 # With SOAK_SECONDS set, also two players connected and chatting for that long (FakePlayers soak).
 # 4. With a v1.8.4 server folder (official, or our mac release's): this build joining it in its protocol and chatting
 #    (FakePlayers listen184 / talk184).
@@ -283,6 +287,12 @@ run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=f
 
 echo "== Plus server: two party members trade, both confirm, and nothing is duplicated"
 run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false' tradeleader trademember
+
+echo "== Plus server: a player's follower runs in their game and stays theirs until dismissed"
+run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false' companionleader companionmember
+
+echo "== Plus server: a player entering a cell sees gates and levers as the others left them"
+run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false' activatorfirst activatorlater
 
 # With SOAK_SECONDS set: two players stay connected and chat for that long (FakePlayers soak)
 if [[ -n "${SOAK_SECONDS:-}" ]]; then
