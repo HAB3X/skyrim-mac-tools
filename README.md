@@ -37,6 +37,11 @@ prefix (`~/Games/skyrim`).
 - Keeping the Mac awake: while the game runs, the launcher holds `caffeinate -dis -w <game pid>` (no display sleep,
   idle sleep or, on power, system sleep; it ends with the game). `check` and Play warn when Low Power Mode is on
   (`pmset -g` shows `lowpowermode 1`), which keeps the game from holding 60 fps.
+- After a crash: when the game exits, the launcher looks for this session's crash reports (the mod's
+  `crash_UTC_*.dmp` next to `SkyrimTogether.exe`, Crash Logger's `crash-*.log`, or Wine's "Unhandled exception/page
+  fault" in `skyrim-together.log`). If there is one it runs `collect-logs.sh` and shows a dialog with the zip's path and
+  **Relaunch** (`skyrim-play.sh together` with the same build). skyrim-play.sh passes its folder (`ST_LAUNCH_DIR`) so
+  the copy in `~/Games` finds `collect-logs.sh`.
 - Plus updates: `ST_VERSION=1.8.4-plus skyrim-together.sh update check` reads the releases of HAB3X/TiltedEvolution
   from GitHub's public API (no sign-in) and prints `UPDATE <tag> <bytes> <installed>` when a `v1.8.4-plus.N` newer than
   the installed build (the version in its `SkyrimTogether.exe`) is out. `update install` downloads that release's zip,

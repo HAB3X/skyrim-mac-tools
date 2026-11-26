@@ -50,6 +50,6 @@ else
   done
 fi
 case "${1:-}" in
-  together) exec /bin/bash "$HOME/Games/skyrim-together.sh" ;;   # Skyrim Together (~/Desktop/Skyrim Together.app)
+  together) ST_LAUNCH_DIR=$(cd "$(dirname "$0")" && pwd) exec /bin/bash "$HOME/Games/skyrim-together.sh" ;;   # Skyrim Together (~/Desktop/Skyrim Together.app)
   *)        exec /bin/bash "$LAUNCHER" ;;
 esac

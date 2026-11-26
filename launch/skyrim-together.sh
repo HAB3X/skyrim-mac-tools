@@ -11,6 +11,7 @@ ST_VERSION=${ST_VERSION:-1.8.4}   # "1.8.4-plus" picks the Plus build (Desktop: 
 ST_BUILDS=${ST_BUILDS:-$HOME/Games}   # where the builds are: skyrim-together-<ST_VERSION>[-sse1.6.1170][-mac]/files
 
 SKYRIM_HOME="$HOME/Games/skyrim"
+LOGS="$SKYRIM_HOME/logs"
 export WINEPREFIX="$SKYRIM_HOME/prefix"
 export DYLD_FALLBACK_LIBRARY_PATH="$SKYRIM_HOME/wine/lib:/usr/lib"
 export WINEDEBUG="${WINEDEBUG:--all}"
@@ -59,7 +60,7 @@ fix_input() {
 # Wine opens the game's window without making it the active app: macOS keeps the keyboard and mouse with whatever
 # started it (Terminal, another app). Once the window is there, make the game the active app; then, for as long as the
 # game runs, give Wine's foreground back to the game each time it becomes the active Mac app again (Cmd-Tab, Dock),
-# and whenever Wine has no foreground window at all (fix-input.exe --watch).
+# and whenever Wine has no foreground window at all (fix-input.exe --watch). When it has exited: after_game.
 bring_to_front() {
   local pid="" front last=""
   for _ in {1..120}; do
@@ -70,7 +71,7 @@ bring_to_front() {
     [ "${windows:-0}" -gt 0 ] && break
     pid=""
   done
-  [ -n "$pid" ] || return
+  [ -n "$pid" ] || { after_game; return; }   # no window in 2 minutes: it may have crashed while loading
   # Keep the Mac and its display awake while the game runs (no screen saver or sleep mid-session); ends with the game
   /usr/bin/caffeinate -dis -w "$pid" &
   make_frontmost "$pid"
@@ -81,10 +82,56 @@ bring_to_front() {
     last=$front
     sleep 1
   done
+  after_game
+}
+
+# Why the session that started at $CRASH_MARK crashed: the mod's crash_UTC_*.dmp next to SkyrimTogether.exe, Crash
+# Logger's crash-*.log, or Wine's own report of an unhandled exception. Prints nothing when it didn't crash.
+crash_reason() {
+  local f
+  f=$(/usr/bin/find "$DATA/SkyrimTogetherReborn" "$SKSE_LOGS" -maxdepth 1 \( -name 'crash_UTC_*.dmp' -o -name 'crash-*.log' \) \
+        -newer "$CRASH_MARK" -print -quit 2>/dev/null)
+  if [ -n "$f" ]; then echo "it wrote ${f##*/}"; return; fi
+  /usr/bin/grep -q -E 'Unhandled (exception|page fault)' "$LOGS/skyrim-together.log" 2>/dev/null \
+    && echo "Wine reported an unhandled exception"
+}
+
+# The dialog after a crash: $1 why, $2 where the logs went (or why they didn't). Prints the button pressed ("Relaunch",
+# "Not Now", or nothing when it was left for 10 minutes). The texts go in as arguments: no quoting to get wrong.
+crash_dialog() {
+  /usr/bin/osascript - "$1" "$2" 2>/dev/null <<'OSA'
+on run argv
+  set message to "Skyrim Together crashed: " & item 1 of argv & "." & return & return & item 2 of argv
+  set answer to display dialog message with title "Skyrim Together" buttons {"Not Now", "Relaunch"} default button "Relaunch" giving up after 600
+  if gave up of answer then return ""
+  return button returned of answer
+end run
+OSA
+}
+
+# After the game exits: on a crash, collect the logs (collect-logs.sh) and offer to start it again
+after_game() {
+  local reason zip logs answer
+  reason=$(crash_reason)
+  [ -n "$reason" ] || return 0
+  echo "the game crashed: $reason" >> "$LOGS/fix-input.log"
+  if [ -x "$LAUNCH_DIR/collect-logs.sh" ]; then
+    zip=$("$LAUNCH_DIR/collect-logs.sh" 2> "$LOGS/collect-logs-after-crash.log" | /usr/bin/tail -1)
+    [ -n "$zip" ] && logs="The logs are in $zip (send it with a description of what happened)." \
+      || logs="Collecting the logs failed (see $LOGS/collect-logs-after-crash.log)."
+  else
+    logs="The logs weren't collected: collect-logs.sh isn't in $LAUNCH_DIR."
+  fi
+  answer=$(crash_dialog "$reason" "$logs")
+  [ "$answer" = Relaunch ] && ST_VERSION=$ST_VERSION /bin/bash "$LAUNCH_DIR/skyrim-play.sh" together >> "$LOGS/fix-input.log" 2>&1
 }
 WINESERVER="$SKYRIM_HOME/wine/bin/wineserver"
-LOGS="$SKYRIM_HOME/logs"
 PLUGINS_TXT="$WINEPREFIX/drive_c/users/${USER:-$(id -un)}/AppData/Local/Skyrim Special Edition GOG/plugins.txt"
+SKSE_LOGS="$WINEPREFIX/drive_c/users/${USER:-$(id -un)}/Documents/My Games/Skyrim Special Edition GOG/SKSE"
+# The repo's launch/ folder (collect-logs.sh, skyrim-play.sh): skyrim-play.sh passes it, since this script is run from
+# its copy in ~/Games
+LAUNCH_DIR=${ST_LAUNCH_DIR:-$(cd "$(dirname "$0")" && pwd)}
+CRASH_MARK="$LOGS/.game-started"   # touched when the game starts: crash reports newer than it are this session's
 ST_PLUGINS=(SkyrimTogether.esp SkyrimTogetherQuestPatches.esp)
 
 fail() { echo "FAIL $1"; exit 1; }
@@ -312,6 +359,7 @@ case "${1:-play}" in
         [ -f "$WINEPREFIX/drive_c/windows/system32/$n.dll" ] && "$WINE" reg add "$key" /v "$n" /t REG_SZ /d native,builtin /f >/dev/null 2>&1
       done
     fi
+    /usr/bin/touch "$CRASH_MARK"
     # DXMT rewrites its log on every start; keep the previous session's, to see why a session ran slow
     for log in "$LOGS"/{SkyrimSE,TPProcess}_d3d11.log; do
       [ -f "$log" ] && mv -f "$log" "${log%.log}.previous.log"
