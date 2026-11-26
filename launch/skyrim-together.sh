@@ -95,6 +95,19 @@ check() {   # prints one line per requirement; returns 1 when any is missing
   return $bad
 }
 
+network_check() {   # things on this Mac that keep friends out; prints one WARN line each, never stops the game
+  local fw=/usr/libexec/ApplicationFirewall/socketfilterfw vpn
+  vpn=$(/usr/sbin/scutil --nc list 2>/dev/null | /usr/bin/sed -n 's/.*(Connected).*"\(.*\)".*/\1/p' | /usr/bin/head -1)
+  [ -n "$vpn" ] && echo "WARN the VPN \"$vpn\" is connected: friends on your network can't reach a game you host. Disconnect it, or allow local network traffic in it."
+  # --getappblocked says "permitted" for programs it has no rule for: the rule list is what counts
+  if "$fw" --getglobalstate 2>/dev/null | /usr/bin/grep -q enabled \
+     && ! "$fw" --listapps 2>/dev/null | /usr/bin/grep -A1 -F "$WINE " | /usr/bin/grep -q "Allow incoming"; then
+    echo "WARN the Mac firewall blocks Wine: friends can't join a game you host. In Terminal:"
+    echo "       sudo $fw --add $WINE && sudo $fw --unblockapp $WINE"
+  fi
+  return 0
+}
+
 # Copy the release into Data (APFS clones: instant, no extra space). Only files that differ are replaced.
 install_mod() {
   local stamp="$DATA/SkyrimTogetherReborn/.installed-version" want
@@ -121,13 +134,19 @@ win_path() { printf 'C:%s' "$(printf '%s' "${1#"$WINEPREFIX/drive_c"}" | tr '/' 
 
 mkdir -p "$LOGS"
 case "${1:-play}" in
-  check) check; exit $? ;;
+  check) check; status=$?; network_check; exit $status ;;
   server)
     [ -d "$ST_FILES/SkyrimTogetherReborn" ] || fail "Skyrim Together files missing in $ST_FILES"
     cd "$ST_FILES/SkyrimTogetherReborn" || exit 1
     echo "server on UDP port 10578 — friends connect to this Mac's IP; settings in config/STServer.ini"
     exec "$WINE" SkyrimTogetherServer.exe ;;
   play)
+    # Hosting needs the network open; the game's own check says the same in chat once a server runs
+    warnings=$(network_check)
+    if [ -n "$warnings" ]; then
+      echo "$warnings"
+      /usr/bin/osascript -e "display notification \"$(printf '%s' "$warnings" | /usr/bin/head -1 | /usr/bin/cut -c6- | /usr/bin/tr -d '\"')\" with title \"Skyrim Together\"" >/dev/null 2>&1
+    fi
     if [ -n "$GAMEDIR" ] && [ ! -f "$DATA/SKSE/Plugins/$ADDRLIB" ] && [ -f "$ADDRLIB_SRC" ]; then
       mkdir -p "$DATA/SKSE/Plugins" && /bin/cp "$ADDRLIB_SRC" "$DATA/SKSE/Plugins/" || fail "could not copy $ADDRLIB"
     fi
