@@ -17,6 +17,8 @@
 # 7. A required mod listed with its checksum: same size, other contents refused (FakePlayers modchecksums).
 # 8. A vote kick and a ready check among three players, two of them at this computer's network address so they
 #    aren't the host (FakePlayers votehost / votetarget / votevoter).
+# 9. A host world server keeping its world (Gameplay:bKeepWorld): a chest's contents survive the server being killed
+#    and started again in the same folder (FakePlayers worldstore / worldload).
 # With SOAK_SECONDS set, also two players connected and chatting for that long (FakePlayers soak).
 # 4. With a v1.8.4 server folder (official, or our mac release's): this build joining it in its protocol and chatting
 #    (FakePlayers listen184 / talk184).
@@ -220,6 +222,23 @@ elif dir=$(start_server "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\n
     wait_player "$dir" target
     wait_player "$dir" host
     report "$dir/host.log" "$dir/target.log" "$dir/voter.log"
+else
+    FAILED=1
+fi
+
+echo "== Plus host world server: the world it keeps survives a restart"
+WORLD_INI=$'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false\n[Gameplay]\nbHostWorld=true\nuKeepWorldSeconds=2\nsKeepWorldName=FakeParty'
+if dir=$(start_server "$PLUS_SERVER" "$WORLD_INI" world); then
+    run_player "$dir" store worldstore
+    # Stopped the hard way: the periodic save has to be enough
+    stop_started
+    if [[ -f "$dir/world/FakeParty.dat" ]] && start_server "$PLUS_SERVER" "$WORLD_INI" world > /dev/null; then
+        run_player "$dir" load worldload
+        report "$dir/store.log" "$dir/load.log"
+    else
+        echo "FAIL no world/FakeParty.dat after the first run, or the server didn't start again"
+        FAILED=1
+    fi
 else
     FAILED=1
 fi
