@@ -1,7 +1,7 @@
 // Skyrim Together Host: run a co-op server from a window.
 //
 // Sits in a release next to SkyrimTogether-1.6.1170 (and Play Skyrim Together.exe). Edits the server's
-// config\STServer.ini (name, password, player limit, port, PvP), starts SkyrimTogetherServer.exe without a console
+// config\STServer.ini (name, password, player limit, port, PvP, host world), starts SkyrimTogetherServer.exe without a console
 // window and talks to it through its stdin/stdout: it lists who is connected every few seconds (/players) and kicks
 // the selected player (/kick). It shows the addresses friends join with and copies an invite to the clipboard.
 //
@@ -21,6 +21,8 @@
 #include <ws2tcpip.h>
 
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <regex>
 #include <string>
 #include <thread>
@@ -39,7 +41,7 @@ constexpr UINT kPollMs = 3000;
 
 enum Control : int
 {
-    kName = 100, kPassword, kMaxPlayers, kPort, kPvp, kStartStop, kPlayers, kKick, kStatus, kAddresses, kCopy, kLog
+    kName = 100, kPassword, kMaxPlayers, kPort, kPvp, kHostWorld, kStartStop, kPlayers, kKick, kStatus, kAddresses, kCopy, kLog
 };
 
 struct Player
@@ -100,6 +102,14 @@ fs::path FindServerDir()
     return {};
 }
 
+// Host world mode (Gameplay:bHostWorld) is in the Plus server only: its library names the setting
+bool ServerHasHostWorld()
+{
+    std::ifstream file(g.serverDir / L"STServer.dll", std::ios::binary);
+    const std::string cBytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+    return cBytes.find("Gameplay:bHostWorld") != std::string::npos;
+}
+
 fs::path IniPath() { return g.serverDir / L"config" / L"STServer.ini"; }
 
 std::wstring IniRead(const wchar_t* apSection, const wchar_t* apKey, const wchar_t* apDefault)
@@ -123,6 +133,8 @@ void LoadSettings()
     SetWindowTextW(Item(kMaxPlayers), IniRead(L"GameServer", L"uMaxPlayerCount", L"8").c_str());
     SetWindowTextW(Item(kPort), IniRead(L"GameServer", L"uPort", L"10578").c_str());
     Button_SetCheck(Item(kPvp), IniRead(L"Gameplay", L"bEnablePvp", L"false") == L"true" ? BST_CHECKED : BST_UNCHECKED);
+    Button_SetCheck(Item(kHostWorld), IniRead(L"Gameplay", L"bHostWorld", L"false") == L"true" ? BST_CHECKED : BST_UNCHECKED);
+    ShowWindow(Item(kHostWorld), ServerHasHostWorld() ? SW_SHOW : SW_HIDE);
 }
 
 bool SaveSettings()
@@ -139,6 +151,8 @@ bool SaveSettings()
     IniWrite(L"GameServer", L"uMaxPlayerCount", std::to_wstring(cMaxValue));
     IniWrite(L"GameServer", L"uPort", std::to_wstring(cPortValue));
     IniWrite(L"Gameplay", L"bEnablePvp", Button_GetCheck(Item(kPvp)) == BST_CHECKED ? L"true" : L"false");
+    if (ServerHasHostWorld())
+        IniWrite(L"Gameplay", L"bHostWorld", Button_GetCheck(Item(kHostWorld)) == BST_CHECKED ? L"true" : L"false");
     return true;
 }
 
@@ -234,7 +248,7 @@ void UpdateAddresses()
 void UpdateUi()
 {
     SetWindowTextW(Item(kStartStop), g.running ? L"Stop server" : L"Start server");
-    for (int id : {kName, kPassword, kMaxPlayers, kPort, kPvp})
+    for (int id : {kName, kPassword, kMaxPlayers, kPort, kPvp, kHostWorld})
         EnableWindow(Item(id), !g.running);
     const std::wstring cStatus = g.running ? L"Running: " + std::to_wstring(g.players.size()) + L" of " + Text(kMaxPlayers) + L" players connected"
                                            : L"Stopped";
@@ -411,7 +425,9 @@ void CreateControls()
     row(L"Password", kPassword, 0);
     row(L"Max players", kMaxPlayers, ES_NUMBER);
     row(L"Port (UDP)", kPort, ES_NUMBER);
-    Add(L"BUTTON", L"Allow PvP", BS_AUTOCHECKBOX | WS_TABSTOP, kField, y, 200, 22, kPvp);
+    Add(L"BUTTON", L"Allow PvP", BS_AUTOCHECKBOX | WS_TABSTOP, kField, y, 110, 22, kPvp);
+    // Friends take over your quests, cleared dungeons and dead NPCs, and start next to you
+    Add(L"BUTTON", L"Friends join my world", BS_AUTOCHECKBOX | WS_TABSTOP, kField + 120, y, kFieldWidth - 120, 22, kHostWorld);
     y += 34;
     Add(L"BUTTON", L"Start server", BS_DEFPUSHBUTTON | WS_TABSTOP, kLeft, y, 150, 32, kStartStop);
     Add(L"BUTTON", L"Copy invite", WS_TABSTOP, kLeft + 160, y, 150, 32, kCopy);
