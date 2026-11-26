@@ -3,9 +3,10 @@
 #   check-host-world.sh <Plus server folder> <folder with FakePlayers.exe> [official v1.8.4 server folder]
 # 1. A Plus server (SkyrimTogetherServer.exe, STServer.dll) with host world on and UPnP off: host world mode and local
 #    network discovery (FakePlayers host / join).
-# 2. The same server requiring the host's mods (ModPolicy:bRequireMods): refuses a player without them and names the
+# 2. The host kicking a player from the player list (FakePlayers kicker / kicked).
+# 3. The same server requiring the host's mods (ModPolicy:bRequireMods): refuses a player without them and names the
 #    missing one, lets one with them in (FakePlayers mods).
-# 3. With a v1.8.4 server folder (official, or our mac release's): this build joining it in its protocol and chatting
+# 4. With a v1.8.4 server folder (official, or our mac release's): this build joining it in its protocol and chatting
 #    (FakePlayers listen184 / talk184).
 # Prints one line per check; exits 0 when all pass.
 set -u
@@ -60,6 +61,9 @@ run_pair() {
 
 echo "== Plus server: host world and local network discovery"
 run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\n[Gameplay]\nbHostWorld=true' host join
+
+echo "== Plus server: the host kicks a player from the player list"
+run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false' kicker kicked
 
 echo "== Plus server: the host's mods required"
 if dir=$(start_server "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false\n[ModPolicy]\nbRequireMods=true' mods $'SomeMod.esp\nccBGSSSE001-Fish.esm'); then

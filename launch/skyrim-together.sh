@@ -30,6 +30,23 @@ export DXMT_MAP_FAST=0 DXMT_UNRETAINED=0 DXMT_RELEASE_POOL=0 DXMT_RESIDENCY_SET=
 # Apple's Metal HUD (fps, frame times) while ~/Games/skyrim/config/metal-hud exists: touch it to show, delete it to hide.
 [ -f "$SKYRIM_HOME/config/metal-hud" ] && export MTL_HUD_ENABLED=1
 WINE="$SKYRIM_HOME/wine/bin/wine"
+
+# Wine opens the game's window without making it the active app: macOS keeps the keyboard and mouse with whatever
+# started it (Terminal, another app). Once the window is there, make the game the active app, once.
+bring_to_front() {
+  local pid=""
+  for _ in {1..120}; do
+    sleep 1
+    pid=$(/usr/bin/pgrep -f "SkyrimTogether.exe --exePath" | /usr/bin/tail -1)
+    [ -n "$pid" ] || continue
+    windows=$(/usr/bin/osascript -e "tell application \"System Events\" to count windows of (first process whose unix id is $pid)" 2>/dev/null)
+    if [ "${windows:-0}" -gt 0 ]; then
+      /usr/bin/osascript -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $pid) to true" >/dev/null 2>&1 \
+        || echo "Couldn't make the game the active app (allow this app to control System Events in Privacy & Security, Automation)" >&2
+      return
+    fi
+  done
+}
 WINESERVER="$SKYRIM_HOME/wine/bin/wineserver"
 LOGS="$SKYRIM_HOME/logs"
 PLUGINS_TXT="$WINEPREFIX/drive_c/users/${USER:-$(id -un)}/AppData/Local/Skyrim Special Edition GOG/plugins.txt"
@@ -135,6 +152,8 @@ case "${1:-play}" in
     fi
     cd "$DATA/SkyrimTogetherReborn" || exit 1
     "$WINE" SkyrimTogether.exe --exePath "$(win_path "$GAMEDIR/SkyrimSE.exe")" > "$LOGS/skyrim-together.log" 2>&1 &
+    disown
+    bring_to_front &
     disown
     echo "Skyrim Together started (Wine log: $LOGS/skyrim-together.log, mod logs: $DATA/SkyrimTogetherReborn/logs)" ;;
   *) echo "usage: $0 [play|server|check]"; exit 2 ;;
