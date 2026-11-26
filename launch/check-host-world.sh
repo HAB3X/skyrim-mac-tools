@@ -15,6 +15,8 @@
 #    with both players joining through the relay.
 # 6. A player with another Plus release refused, and the host told both versions (FakePlayers oldversion).
 # 7. A required mod listed with its checksum: same size, other contents refused (FakePlayers modchecksums).
+# 8. A vote kick and a ready check among three players, two of them at this computer's network address so they
+#    aren't the host (FakePlayers votehost / votetarget / votevoter).
 # With SOAK_SECONDS set, also two players connected and chatting for that long (FakePlayers soak).
 # 4. With a v1.8.4 server folder (official, or our mac release's): this build joining it in its protocol and chatting
 #    (FakePlayers listen184 / talk184).
@@ -181,6 +183,43 @@ echo "== Plus server: a required mod with the same size and other contents"
 if dir=$(start_server "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false\n[ModPolicy]\nbRequireMods=true' checksums $'Exact.esp|100|0000abcd\nccBGSSSE001-Fish.esm'); then
     run_player "$dir" checksums modchecksums
     report "$dir/checksums.log"
+else
+    FAILED=1
+fi
+
+echo "== Plus server: the party bar's magicka, stamina, combat and downed"
+run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false' barleader barmember
+
+echo "== Plus server: pings reach the party"
+run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false' pingleader pingmember
+
+echo "== Plus server: the party is asked to follow the leader through a load door"
+run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false' doorleader doorfollower
+
+echo "== Plus server: any member's load door, when the host allows it"
+run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false\n[Gameplay]\nbPartyDoorsAnyMember=true' doorleaderany doorfollower
+
+echo "== Plus server: go to and summon party members, with a cooldown"
+run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false\n[Gameplay]\nuPartyTeleportCooldown=5' moveleader movemember
+
+echo "== Plus server: respawning next to a party member"
+run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false' respawnleader respawnmember
+
+echo "== Plus server: a vote kick and a ready check"
+# Players at this computer's network address aren't the host, who plays at 127.0.0.1
+LAN_ADDRESS=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null)
+if [[ -z "$LAN_ADDRESS" ]]; then
+    echo "FAIL no network address for the players who aren't the host"
+    FAILED=1
+elif dir=$(start_server "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false' votes); then
+    start_player "$dir" host votehost
+    sleep 3
+    start_player "$dir" target votetarget "$LAN_ADDRESS:10578"
+    sleep 3
+    run_player "$dir" voter votevoter "$LAN_ADDRESS:10578"
+    wait_player "$dir" target
+    wait_player "$dir" host
+    report "$dir/host.log" "$dir/target.log" "$dir/voter.log"
 else
     FAILED=1
 fi
