@@ -126,8 +126,6 @@ after_game() {
   [ "$answer" = Relaunch ] && ST_VERSION=$ST_VERSION /bin/bash "$LAUNCH_DIR/skyrim-play.sh" together >> "$LOGS/fix-input.log" 2>&1
 }
 WINESERVER="$SKYRIM_HOME/wine/bin/wineserver"
-PLUGINS_TXT="$WINEPREFIX/drive_c/users/${USER:-$(id -un)}/AppData/Local/Skyrim Special Edition GOG/plugins.txt"
-SKSE_LOGS="$WINEPREFIX/drive_c/users/${USER:-$(id -un)}/Documents/My Games/Skyrim Special Edition GOG/SKSE"
 # The repo's launch/ folder (collect-logs.sh, skyrim-play.sh): skyrim-play.sh passes it, since this script is run from
 # its copy in ~/Games
 LAUNCH_DIR=${ST_LAUNCH_DIR:-$(cd "$(dirname "$0")" && pwd)}
@@ -136,10 +134,39 @@ ST_PLUGINS=(SkyrimTogether.esp SkyrimTogetherQuestPatches.esp)
 
 fail() { echo "FAIL $1"; exit 1; }
 
-# The GOG install: the folder holding SkyrimSE.exe under C:\GOG Games (SkyrimMT's install-gog.sh puts it there).
-GAMEDIR=$(/usr/bin/find "$WINEPREFIX/drive_c/GOG Games" -maxdepth 2 -name SkyrimSE.exe -print -quit 2>/dev/null)
-GAMEDIR=${GAMEDIR%/SkyrimSE.exe}
+# Where Skyrim SE is: the GOG copy under C:\GOG Games (SkyrimMT's install-gog.sh puts it there), else a Steam copy:
+# Windows Steam's libraries in the prefix (libraryfolders.vdf), or Steam for Mac's library. ST_STORE=steam picks Steam
+# when both are there. Sets GAMEDIR (empty when none) and STORE (GOG or Steam).
+steam_libraries() {   # one Mac folder per Steam library: the prefix's Steam, the libraries it lists, Steam for Mac's
+  local steam="$WINEPREFIX/drive_c/Program Files (x86)/Steam" path drive
+  echo "$steam"
+  /usr/bin/sed -n 's/^[[:space:]]*"path"[[:space:]]*"\(.*\)"[[:space:]]*$/\1/p' "$steam/steamapps/libraryfolders.vdf" 2>/dev/null \
+    | while IFS= read -r path; do   # "D:\\Games\\Steam": the drive through dosdevices, backslashes unescaped
+        drive=$(printf '%s' "${path:0:2}" | /usr/bin/tr '[:upper:]' '[:lower:]')
+        path=${path:2}; path=${path//\\\\/\/}
+        echo "$WINEPREFIX/dosdevices/$drive$path"
+      done
+  echo "$HOME/Library/Application Support/Steam"
+}
+find_game() {
+  local gog steam lib
+  gog=$(/usr/bin/find "$WINEPREFIX/drive_c/GOG Games" -maxdepth 2 -name SkyrimSE.exe -print -quit 2>/dev/null)
+  while IFS= read -r lib; do
+    [ -f "$lib/steamapps/common/Skyrim Special Edition/SkyrimSE.exe" ] && { steam="$lib/steamapps/common/Skyrim Special Edition/SkyrimSE.exe"; break; }
+  done < <(steam_libraries)
+  if [ -n "$gog" ] && { [ "${ST_STORE:-}" != steam ] || [ -z "$steam" ]; }; then GAMEDIR=${gog%/SkyrimSE.exe}; STORE=GOG
+  elif [ -n "$steam" ]; then GAMEDIR=${steam%/SkyrimSE.exe}; STORE=Steam
+  else GAMEDIR=""; STORE=""
+  fi
+}
+find_game
 DATA="$GAMEDIR/Data"
+# The game's settings folders are named after the store: "Skyrim Special Edition GOG" for GOG, without " GOG" for Steam
+SETTINGS_NAME="Skyrim Special Edition${STORE:+$([ "$STORE" = GOG ] && echo " GOG")}"
+WIN_USER_DIR="$WINEPREFIX/drive_c/users/${USER:-$(id -un)}"
+PLUGINS_TXT="$WIN_USER_DIR/AppData/Local/$SETTINGS_NAME/plugins.txt"
+MY_GAMES="$WIN_USER_DIR/Documents/My Games/$SETTINGS_NAME"
+SKSE_LOGS="$MY_GAMES/SKSE"
 
 # FileVersion of a Windows executable (VS_FIXEDFILEINFO), e.g. 1.7.104.0
 exe_version() {
@@ -167,8 +194,14 @@ check() {   # prints one line per requirement; returns 1 when any is missing
   [ -x "$WINE" ] && echo "OK   Wine runtime" || { echo "MISS Wine runtime (run SkyrimMT setup)"; bad=1; }
   [ -d "$ST_FILES/SkyrimTogetherReborn" ] && echo "OK   Skyrim Together $ST_VERSION files" \
     || { echo "MISS Skyrim Together files in $ST_FILES"; bad=1; }
-  if [ -z "$GAMEDIR" ]; then echo "MISS Skyrim (GOG) — not installed in the prefix yet"; return 1; fi
-  echo "OK   Skyrim at $GAMEDIR"
+  if [ -z "$GAMEDIR" ]; then
+    echo "MISS Skyrim Special Edition: no GOG copy in C:\\GOG Games and no Steam copy in the prefix's or the Mac's Steam libraries"
+    return 1
+  fi
+  echo "OK   Skyrim ($STORE) at $GAMEDIR"
+  # The Steam copy starts through Steam (steam_api64.dll): Windows Steam has to be running in this prefix
+  [ "$STORE" = Steam ] && ! /usr/bin/pgrep -qf 'steam\.exe' \
+    && echo "WARN Steam isn't running in the prefix: the Steam copy of Skyrim needs it. Start Steam there, then Play."
   v=$(exe_version "$GAMEDIR/SkyrimSE.exe")
   [ "$v" = "$GAME_VERSION" ] && echo "OK   game version $v" \
     || { echo "MISS game version $v — Skyrim Together $ST_VERSION needs $GAME_VERSION"; bad=1; }
@@ -307,11 +340,20 @@ update_rollback() {
   echo "OK   $(cat "$target/VERSION" 2>/dev/null || echo "the previous build") is back in $target; the game gets it at the next Play"
 }
 
-win_path() { printf 'C:%s' "$(printf '%s' "${1#"$WINEPREFIX/drive_c"}" | tr '/' '\\')"; }
+win_path() {   # C:\... inside the prefix's drive_c, D:\... through its dosdevices, Z:\... (the Mac's root) elsewhere
+  case "$1" in
+    "$WINEPREFIX/drive_c"/*) printf 'C:%s' "$(printf '%s' "${1#"$WINEPREFIX/drive_c"}" | tr '/' '\\')" ;;
+    "$WINEPREFIX/dosdevices"/?:/*) local rest=${1#"$WINEPREFIX/dosdevices/"}
+      printf '%s%s' "$(printf '%s' "${rest:0:2}" | tr '[:lower:]' '[:upper:]')" "$(printf '%s' "${rest:2}" | tr '/' '\\')" ;;
+    *) printf 'Z:%s' "$(printf '%s' "$1" | tr '/' '\\')" ;;
+  esac
+}
 
 mkdir -p "$LOGS"
 case "${1:-play}" in
   check) check; status=$?; network_check; power_check; exit $status ;;
+  paths)   # for skyrim-play.sh and collect-logs.sh: where this script found the game, as shell assignments
+    printf 'GAMEDIR=%q\nSTORE=%q\nMY_GAMES=%q\nLOAD_ORDER=%q\n' "$GAMEDIR" "$STORE" "$MY_GAMES" "${PLUGINS_TXT%/plugins.txt}" ;;
   update)
     [ "$ST_VERSION" = 1.8.4-plus ] || fail "updates are for the Plus build: ST_VERSION=1.8.4-plus"
     case "${2:-check}" in
@@ -370,5 +412,5 @@ case "${1:-play}" in
     bring_to_front &
     disown
     echo "Skyrim Together started (Wine log: $LOGS/skyrim-together.log, mod logs: $DATA/SkyrimTogetherReborn/logs)" ;;
-  *) echo "usage: $0 [play|server|check|fix-input|update]"; exit 2 ;;
+  *) echo "usage: $0 [play|server|check|fix-input|update|paths]"; exit 2 ;;
 esac

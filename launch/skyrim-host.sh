@@ -34,7 +34,8 @@ esac
 
 # Ensure the server config dir exists and has an ini — the server exits silently without it
 mkdir -p "$SERVER_DIR/config"
-DATA_INI="$WINEPREFIX/drive_c/GOG Games/Skyrim Special Edition/Data/SkyrimTogetherReborn/config/STServer.ini"
+eval "$(/bin/bash "$HOME/Games/skyrim-together.sh" paths)"   # GAMEDIR: the GOG or Steam copy
+DATA_INI="$GAMEDIR/Data/SkyrimTogetherReborn/config/STServer.ini"
 if [ ! -f "$INI" ]; then
   if [ -f "$DATA_INI" ]; then
     /bin/cp "$DATA_INI" "$INI"

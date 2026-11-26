@@ -9,12 +9,8 @@ set -u
 COUNT=${COLLECT_COUNT:-8}
 HERE=$(cd "$(dirname "$0")" && pwd)
 SKYRIM_HOME="$HOME/Games/skyrim"
-PREFIX="$SKYRIM_HOME/prefix"
-USER_DIR="$PREFIX/drive_c/users/${USER:-$(id -un)}"
-MY_GAMES="$USER_DIR/Documents/My Games/Skyrim Special Edition GOG"
-LOAD_ORDER="$USER_DIR/AppData/Local/Skyrim Special Edition GOG"
-GAMEDIR=$(/usr/bin/find "$PREFIX/drive_c/GOG Games" -maxdepth 2 -name SkyrimSE.exe -print -quit 2>/dev/null)
-GAMEDIR=${GAMEDIR%/SkyrimSE.exe}
+# GAMEDIR, STORE, MY_GAMES, LOAD_ORDER: where skyrim-together.sh finds the game (GOG or Steam)
+eval "$(/bin/bash "$HERE/skyrim-together.sh" paths)"
 MOD="$GAMEDIR/Data/SkyrimTogetherReborn"
 
 fail() { echo "FAIL $1" >&2; exit 1; }

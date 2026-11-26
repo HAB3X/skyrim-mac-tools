@@ -6,8 +6,13 @@ Skyrim Together's Windows binaries on macOS. The Mac build of Skyrim Together it
 
 ## launch/
 
-Launchers for the GOG version of Skyrim SE (1.6.1179) in a [SkyrimMT](https://github.com/HorrorPills/skyrimmt) Wine
-prefix (`~/Games/skyrim`).
+Launchers for Skyrim SE in a [SkyrimMT](https://github.com/HorrorPills/skyrimmt) Wine prefix (`~/Games/skyrim`): the
+GOG copy (1.6.1179, under `C:\GOG Games`) or a Steam copy (1.6.1170 or 1.7.104) in the prefix's Steam libraries
+(`libraryfolders.vdf`) or Steam for Mac's library. When both are there GOG is used, `ST_STORE=steam` picks Steam. The
+Steam copy starts through Steam, so `check` warns when no `steam.exe` runs in the prefix. `skyrim-together.sh paths`
+prints where the game and its settings folders are (`Skyrim Special Edition GOG` or `Skyrim Special Edition`); the
+other scripts read it from there. Only the GOG copy has been run here: the Steam detection is tested on a made-up
+prefix.
 
 - `skyrim-play.sh` starts Skyrim fullscreen at the Mac's current screen size, `skyrim-play.sh together` starts
   Skyrim Together instead. It sets Wine's `CaptureDisplaysForFullscreen` in the prefix: without it Wine keeps the

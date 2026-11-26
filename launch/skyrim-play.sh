@@ -1,7 +1,7 @@
 #!/bin/bash
-# Start GOG Skyrim (SkyrimMT's launcher) at the Mac's current screen size: every launch reads the main screen's size
-# in macOS points (what Wine shows Windows programs, Retina mode off) and writes it to SkyrimPrefs.ini as a
-# fullscreen game, so it always fills the screen even after the display settings change.
+# Start Skyrim SE (the GOG or Steam copy, through SkyrimMT's launcher) at the Mac's current screen size: every launch
+# reads the main screen's size in macOS points (what Wine shows Windows programs, Retina mode off) and writes it to
+# SkyrimPrefs.ini as a fullscreen game, so it always fills the screen even after the display settings change.
 # Used by ~/Desktop/Skyrim.app; "skyrim-play.sh together" starts Skyrim Together instead (~/Desktop/Skyrim Together.app).
 set -u
 export WINEMSYNC=1   # msync for every Wine process of the prefix (see skyrim-together.sh); SkyrimMT records it per session
@@ -19,7 +19,10 @@ export DXMT_GETDATA_SKIP_FLUSH=0 DXMT_SKIP_SAME_STATE=0 DXMT_SKIP_EMPTY_SLOTS=0 
 export DXMT_PSO_MRU=0 DXMT_PSO_TOPOLOGY_KEEP=0 DXMT_DEPTH_PFV=1 DXMT_STENCIL_PFV=1
 export DXMT_MAP_FAST=0 DXMT_UNRETAINED=0 DXMT_RELEASE_POOL=0 DXMT_RESIDENCY_SET=0 DXMT_VIEW_KEY_ARRAY_BIT=0 DXMT_METAL4=0
 [ -f "$HOME/Games/skyrim/config/metal-hud" ] && export SKYRIMMT_METAL_HUD=1   # fps overlay (see skyrim-together.sh)
-PREFS="$HOME/Games/skyrim/prefix/drive_c/users/${USER:-$(id -un)}/Documents/My Games/Skyrim Special Edition GOG/SkyrimPrefs.ini"
+# Where skyrim-together.sh finds the game (GOG or Steam): GAMEDIR, STORE, MY_GAMES
+eval "$(/bin/bash "$HOME/Games/skyrim-together.sh" paths)"
+[ -n "$GAMEDIR" ] || { echo "FAIL no Skyrim Special Edition found (skyrim-together.sh check says where it looked)"; exit 1; }
+PREFS="$MY_GAMES/SkyrimPrefs.ini"
 LAUNCHER="$HOME/Documents/Mac-Wine-References/SkyrimMT-source/scripts/skyrim.sh"
 
 size=$(/usr/bin/osascript -l JavaScript -e 'ObjC.import("AppKit"); const f = $.NSScreen.mainScreen.frame; Math.round(f.size.width) + " " + Math.round(f.size.height)')
@@ -38,7 +41,7 @@ if ! /usr/bin/grep -q CaptureDisplaysForFullscreen "$HOME/Games/skyrim/prefix/us
 fi
 # SSE Engine Fixes: loaded for plain Skyrim only. With it loaded, Skyrim Together showed no NPCs or items, even with its
 # allocator and form-caching options off (2026-11-18), so for Skyrim Together the plugin is set aside (EngineFixes.dll.off).
-PLUGINS="$HOME/Games/skyrim/prefix/drive_c/GOG Games/Skyrim Special Edition/Data/SKSE/Plugins"
+PLUGINS="$GAMEDIR/Data/SKSE/Plugins"
 EF="$PLUGINS/EngineFixes.toml"
 if [ "${1:-}" = together ]; then
   [ -f "$PLUGINS/EngineFixes.dll" ] && /bin/mv -f "$PLUGINS/EngineFixes.dll" "$PLUGINS/EngineFixes.dll.off"
