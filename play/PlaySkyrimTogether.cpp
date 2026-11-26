@@ -5,6 +5,8 @@
 // version, copies it into the game's Data folder when it isn't installed yet or a different build is, turns on
 // SkyrimTogether.esp and SkyrimTogetherQuestPatches.esp in the load order, checks for the Address Library, and starts
 // Data\SkyrimTogetherReborn\SkyrimTogether.exe. Hold Shift while starting it to pick the game folder again.
+// Hold Ctrl while starting it (or pass --collect-logs) to put the logs, crash dumps and settings needed to report a
+// problem into a new Desktop folder instead (passwords removed, no save games).
 //
 // Build (clang-cl / MSVC): cl /std:c++20 /O2 /EHsc PlaySkyrimTogether.cpp /link /SUBSYSTEM:WINDOWS
 //   user32.lib shell32.lib ole32.lib advapi32.lib version.lib
@@ -180,6 +182,16 @@ void Install(const fs::path& acSource, const fs::path& acData, const std::wstrin
     std::wofstream(acData / kStampFile) << acStamp;
 }
 
+fs::path KnownFolder(REFKNOWNFOLDERID aId)
+{
+    PWSTR path = nullptr;
+    fs::path result;
+    if (SUCCEEDED(SHGetKnownFolderPath(aId, 0, nullptr, &path)))
+        result = path;
+    CoTaskMemFree(path);
+    return result;
+}
+
 // The game's per-user folder name under %LOCALAPPDATA% and Documents\My Games. GOG's build ships Galaxy64.dll and no
 // Steam API; its settings live in "Skyrim Special Edition GOG".
 const wchar_t* SettingsFolderName(const fs::path& acGame)
@@ -192,11 +204,10 @@ const wchar_t* SettingsFolderName(const fs::path& acGame)
 // %LOCALAPPDATA%\Skyrim Special Edition[ GOG]\Plugins.txt: every plugin line with '*' is enabled
 void EnablePlugins(const fs::path& acGame)
 {
-    PWSTR localAppData = nullptr;
-    if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &localAppData)))
+    const fs::path cLocalAppData = KnownFolder(FOLDERID_LocalAppData);
+    if (cLocalAppData.empty())
         return;
-    const fs::path cDir = fs::path(localAppData) / SettingsFolderName(acGame);
-    CoTaskMemFree(localAppData);
+    const fs::path cDir = cLocalAppData / SettingsFolderName(acGame);
     std::error_code ec;
     fs::create_directories(cDir, ec);
     const fs::path cFile = cDir / L"Plugins.txt";
@@ -231,6 +242,171 @@ bool HasAddressLibrary(const fs::path& acData, const std::wstring& acVersion)
     std::error_code ec;
     return fs::exists(acData / L"SKSE\\Plugins" / (L"versionlib-" + name + L".bin"), ec);
 }
+// ---- Collect logs: hold Ctrl while starting (or pass --collect-logs) to gather what's needed to report a problem ----
+
+std::string ToUtf8(const std::wstring& acText)
+{
+    if (acText.empty())
+        return {};
+    const int cSize = WideCharToMultiByte(CP_UTF8, 0, acText.data(), static_cast<int>(acText.size()), nullptr, 0, nullptr, nullptr);
+    std::string utf8(cSize, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, acText.data(), static_cast<int>(acText.size()), utf8.data(), cSize, nullptr, nullptr);
+    return utf8;
+}
+
+std::wstring LowerW(std::wstring aText)
+{
+    std::transform(aText.begin(), aText.end(), aText.begin(), ::towlower);
+    return aText;
+}
+
+// Case-insensitive name match with at most one '*' ("*.log", "crash-*.log", "Plugins.txt")
+bool MatchesPattern(const std::wstring& acName, std::wstring_view aPattern)
+{
+    const std::wstring cName = LowerW(acName), cPattern = LowerW(std::wstring(aPattern));
+    const auto cStar = cPattern.find(L'*');
+    if (cStar == std::wstring::npos)
+        return cName == cPattern;
+    const std::wstring_view cPrefix = std::wstring_view(cPattern).substr(0, cStar), cSuffix = std::wstring_view(cPattern).substr(cStar + 1);
+    return cName.size() >= cPrefix.size() + cSuffix.size() && cName.starts_with(cPrefix) && cName.ends_with(cSuffix);
+}
+
+// Copies the aCount newest non-empty files in acDir matching aPattern into acDest; failures are added to aProblems
+void CopyNewest(const fs::path& acDest, const fs::path& acDir, std::wstring_view aPattern, size_t aCount, std::wstring& aProblems)
+{
+    std::vector<std::pair<fs::file_time_type, fs::path>> found;
+    std::error_code ec;
+    for (const auto& entry : fs::directory_iterator(acDir, ec))
+    {
+        std::error_code entryError;
+        if (entry.is_regular_file(entryError) && entry.file_size(entryError) > 0 && MatchesPattern(entry.path().filename().wstring(), aPattern))
+            found.emplace_back(entry.last_write_time(entryError), entry.path());
+    }
+    std::sort(found.begin(), found.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+    found.resize((std::min)(found.size(), aCount)); // parenthesised: Windows.h defines min
+    for (const auto& [time, file] : found)
+    {
+        fs::create_directories(acDest, ec);
+        if (!fs::copy_file(file, acDest / file.filename(), fs::copy_options::overwrite_existing, ec))
+            aProblems += L"\n" + file.wstring();
+    }
+}
+
+// STServer.ini with every password/token value replaced, so the folder can be shared
+void CopyRedactedIni(const fs::path& acSource, const fs::path& acDest, std::wstring& aProblems)
+{
+    std::error_code ec;
+    if (!fs::exists(acSource, ec))
+        return;
+    fs::create_directories(acDest.parent_path(), ec);
+    std::ifstream in(acSource, std::ios::binary);
+    std::ofstream out(acDest, std::ios::binary);
+    if (!in || !out)
+    {
+        aProblems += L"\n" + acSource.wstring();
+        return;
+    }
+    for (std::string line; std::getline(in, line);)
+    {
+        const auto cEquals = line.find('=');
+        std::string key = cEquals == std::string::npos ? std::string{} : line.substr(0, cEquals);
+        std::transform(key.begin(), key.end(), key.begin(), ::tolower);
+        key.erase(0, key.find_first_not_of(" \t"));
+        const bool cSecret = !key.empty() && key[0] != ';' && key[0] != '#' &&
+                             (key.find("password") != std::string::npos || key.find("token") != std::string::npos);
+        if (cSecret)
+            line = line.substr(0, cEquals + 1) + "<removed>" + (line.ends_with('\r') ? "\r" : "");
+        out << line << '\n';
+    }
+}
+
+// "Build: v1.8.4-plus.3 ..." baked into SkyrimTogether.exe
+std::string BuildString(const fs::path& acExe)
+{
+    std::ifstream file(acExe, std::ios::binary);
+    const std::string cData((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    const auto cStart = cData.find("Build: v");
+    if (cStart == std::string::npos)
+        return "(no build string)";
+    return cData.substr(cStart, cData.find('\0', cStart) - cStart);
+}
+
+std::string SystemSummary(const fs::path& acGame)
+{
+    const wchar_t* const cWindowsKey = L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion";
+    std::ostringstream summary;
+    SYSTEMTIME now;
+    GetLocalTime(&now);
+    char date[32];
+    snprintf(date, sizeof(date), "%04u-%02u-%02u %02u:%02u:%02u", now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond);
+    summary << "collected " << date << "\r\n";
+    summary << "Windows: " << ToUtf8(ReadRegistryString(HKEY_LOCAL_MACHINE, cWindowsKey, L"ProductName")) << " "
+            << ToUtf8(ReadRegistryString(HKEY_LOCAL_MACHINE, cWindowsKey, L"DisplayVersion")) << " (build "
+            << ToUtf8(ReadRegistryString(HKEY_LOCAL_MACHINE, cWindowsKey, L"CurrentBuild")) << ")\r\n";
+    using WineVersion = const char*(__cdecl*)();
+    if (const auto cWine = reinterpret_cast<WineVersion>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "wine_get_version")))
+        summary << "Wine: " << cWine() << "\r\n";
+    summary << "game folder: " << ToUtf8(acGame.wstring()) << "\r\n";
+    summary << "game version: " << ToUtf8(GameVersion(acGame / kGameExe)) << "\r\n";
+    summary << "installed Skyrim Together build: " << ToUtf8(ReadStamp(acGame / L"Data")) << "\r\n";
+    summary << "SkyrimTogether.exe: " << BuildString(acGame / L"Data\\SkyrimTogetherReborn\\SkyrimTogether.exe") << "\r\n";
+    return summary.str();
+}
+
+// A new Desktop folder "SkyrimTogether-logs-<date>" with the mod's logs, crash dumps, Crash Logger reports, the load
+// order and settings, STServer.ini without its passwords and a system summary; opened in Explorer. No save games.
+void CollectLogs(const fs::path& acGame)
+{
+    const fs::path cDesktop = KnownFolder(FOLDERID_Desktop);
+    if (cDesktop.empty())
+        Fail(L"Couldn't find your Desktop folder.");
+    SYSTEMTIME now;
+    GetLocalTime(&now);
+    wchar_t name[64];
+    swprintf_s(name, L"SkyrimTogether-logs-%04u-%02u-%02u_%02u%02u%02u", now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond);
+    const fs::path cOut = cDesktop / name;
+    std::error_code ec;
+    if (!fs::create_directories(cOut, ec))
+        Fail(L"Couldn't create " + cOut.wstring() + L".");
+
+    const fs::path cMod = acGame / L"Data\\SkyrimTogetherReborn";
+    const fs::path cMyGames = KnownFolder(FOLDERID_Documents) / L"My Games" / SettingsFolderName(acGame);
+    const fs::path cLoadOrder = KnownFolder(FOLDERID_LocalAppData) / SettingsFolderName(acGame);
+    const fs::path cSettings = cOut / L"game-settings";
+    std::wstring problems;
+    CopyNewest(cOut / L"mod", cMod / L"logs", L"*.log", 8, problems);
+    CopyNewest(cOut / L"skse", cMyGames / L"SKSE", L"crash-*.log", 5, problems);
+    CopyNewest(cOut / L"skse", cMyGames / L"SKSE", L"skse64.log", 1, problems);
+    CopyNewest(cOut / L"skse", cMyGames / L"SKSE", L"CrashLogger.log", 1, problems);
+    // The mod writes crash_UTC_<time>.dmp next to SkyrimTogether.exe
+    for (const fs::path& dir : {cMod, acGame})
+        CopyNewest(cOut / L"dumps", dir, L"*.dmp", 3, problems);
+    for (const wchar_t* pFile : {L"Plugins.txt", L"loadorder.txt"})
+        CopyNewest(cSettings, cLoadOrder, pFile, 1, problems);
+    for (const wchar_t* pFile : {L"Skyrim.ini", L"SkyrimPrefs.ini", L"SkyrimCustom.ini"})
+        CopyNewest(cSettings, cMyGames, pFile, 1, problems);
+    CopyNewest(cSettings, cMod / L"config", L"CrashGuards.ini", 1, problems);
+    CopyRedactedIni(cMod / L"config\\STServer.ini", cSettings / L"STServer.ini", problems);
+    std::ofstream(cOut / L"system.txt", std::ios::binary) << SystemSummary(acGame);
+
+    if (!problems.empty())
+        MessageBoxW(nullptr, (L"The logs are in " + cOut.wstring() + L", but these files couldn't be copied:" + problems).c_str(),
+                    kTitle, MB_ICONWARNING);
+    ShellExecuteW(nullptr, L"open", cOut.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+}
+
+bool WantsLogCollection()
+{
+    if (GetAsyncKeyState(VK_CONTROL) & 0x8000)
+        return true;
+    int count = 0;
+    LPWSTR* ppArgs = CommandLineToArgvW(GetCommandLineW(), &count);
+    bool wanted = false;
+    for (int i = 1; ppArgs && i < count; i++)
+        wanted = wanted || _wcsicmp(ppArgs[i], L"--collect-logs") == 0;
+    LocalFree(ppArgs);
+    return wanted;
+}
 } // namespace
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
@@ -242,6 +418,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     if (game.empty())
         game = PickGame();
     WriteRegistryString(L"GamePath", game.wstring());
+    if (WantsLogCollection())
+    {
+        CollectLogs(game);
+        return 0;
+    }
 
     const std::wstring cVersion = GameVersion(game / kGameExe);
     if (cVersion.empty())

@@ -23,6 +23,12 @@ prefix (`~/Games/skyrim`).
 - `skyrim-together.sh` installs the Skyrim Together build that matches the installed game version into `Data`,
   enables its plugins and starts it. `skyrim-together.sh server` runs a server (UDP 10578), `check` reports what is
   missing.
+- `collect-logs.sh` gathers what's needed to report a problem into `~/Desktop/SkyrimTogether-logs-<date>.zip` and
+  prints its path: the newest Wine/DXMT logs, the mod's logs (`tp_client.log`, `cef_debug.log`, server output), Crash
+  Logger's `crash-*.log` reports, crash dumps (`crash_UTC_*.dmp`, written next to `SkyrimTogether.exe`), the load
+  order and game INIs, `skyrim-together.sh check` output and versions (macOS, Wine, DXMT, game, Skyrim Together build).
+  Every `STServer.ini` is copied with its password values removed, and nothing from `Saves` is taken; it stops without
+  writing a zip if a password or save file would get in. `COLLECT_COUNT=n` changes how many files per log folder.
 - Both run Wine with msync and set DXMT's options (pipeline warming, hitch log, Metal-paced 60 fps). SSE Engine Fixes
   is set aside (`EngineFixes.dll.off`) for Skyrim Together, where it makes other players and NPCs invisible, and put
   back for plain Skyrim.
@@ -37,8 +43,17 @@ Plugins.txt); the addresses and join code to share, who is connected, and Kick a
 `SkyrimTogetherServer.exe` through its stdin). On a Mac, `launch/skyrim-host-app.sh` runs it under Wine.
 
 `PlaySkyrimTogether.cpp`: the `Play Skyrim Together.exe` in each release zip. It finds Skyrim (Steam or GOG), installs
-the release folder matching the game version into `Data`, enables Skyrim Together's plugins and starts it. Build with
-`cross-build/` (clang-cl) or MSVC; the build line is at the top of the file.
+the release folder matching the game version into `Data`, enables Skyrim Together's plugins and starts it. Holding Ctrl
+while starting it (or `--collect-logs`) instead copies the same kinds of files as `collect-logs.sh` (mod logs, crash
+dumps, Crash Logger reports, load order and INIs, `STServer.ini` without passwords, a system summary) into a new Desktop
+folder `SkyrimTogether-logs-<date>` and opens it in Explorer. Build with `cross-build/` (clang-cl) or MSVC; the build
+line is at the top of the file. From the Mac, inside `play/`:
+
+    . ~/Developer/xwin/env.sh && mkdir -p ../build && clang-cl /nologo /std:c++20 /O2 /EHsc /W3 \
+      --target=x86_64-pc-windows-msvc -fuse-ld=lld-link /winsysroot "$WINSYSROOT" /Fe../build/PlaySkyrimTogether.exe \
+      PlaySkyrimTogether.cpp /link /SUBSYSTEM:WINDOWS user32.lib shell32.lib ole32.lib advapi32.lib version.lib
+
+(the source file goes before `/link`, and paths stay relative: absolute `/Users/...` paths parse as options).
 
 ## mod-set/
 
