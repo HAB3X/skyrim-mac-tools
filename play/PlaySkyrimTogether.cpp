@@ -180,17 +180,24 @@ void Install(const fs::path& acSource, const fs::path& acData, const std::wstrin
     std::wofstream(acData / kStampFile) << acStamp;
 }
 
+// The game's per-user folder name under %LOCALAPPDATA% and Documents\My Games. GOG's build ships Galaxy64.dll and no
+// Steam API; its settings live in "Skyrim Special Edition GOG".
+const wchar_t* SettingsFolderName(const fs::path& acGame)
+{
+    std::error_code ec;
+    const bool cGog = fs::exists(acGame / L"Galaxy64.dll", ec) || !fs::exists(acGame / L"steam_api64.dll", ec);
+    return cGog ? L"Skyrim Special Edition GOG" : L"Skyrim Special Edition";
+}
+
 // %LOCALAPPDATA%\Skyrim Special Edition[ GOG]\Plugins.txt: every plugin line with '*' is enabled
 void EnablePlugins(const fs::path& acGame)
 {
     PWSTR localAppData = nullptr;
     if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &localAppData)))
         return;
-    // GOG's build ships Galaxy64.dll and no Steam API; its settings live in "Skyrim Special Edition GOG"
-    std::error_code ec;
-    const bool cGog = fs::exists(acGame / L"Galaxy64.dll", ec) || !fs::exists(acGame / L"steam_api64.dll", ec);
-    const fs::path cDir = fs::path(localAppData) / (cGog ? L"Skyrim Special Edition GOG" : L"Skyrim Special Edition");
+    const fs::path cDir = fs::path(localAppData) / SettingsFolderName(acGame);
     CoTaskMemFree(localAppData);
+    std::error_code ec;
     fs::create_directories(cDir, ec);
     const fs::path cFile = cDir / L"Plugins.txt";
 
