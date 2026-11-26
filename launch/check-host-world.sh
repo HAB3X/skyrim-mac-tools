@@ -21,6 +21,8 @@
 #    and started again in the same folder (FakePlayers worldstore / worldload).
 # 10. A party member with a bounty gets the guards of that hold near them, the leader can't claim them back meanwhile, and
 #     paying the bounty returns them to the leader (FakePlayers crimeleader / crimemember).
+# 11. A downed party member revived by the other, a revive of someone who is up refused, and both told when the whole
+#     party is down (FakePlayers reviveleader / revivemember).
 # With SOAK_SECONDS set, also two players connected and chatting for that long (FakePlayers soak).
 # 4. With a v1.8.4 server folder (official, or our mac release's): this build joining it in its protocol and chatting
 #    (FakePlayers listen184 / talk184).
@@ -268,6 +270,9 @@ run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=f
 
 echo "== Plus server: a guard deals with the player whose bounty it is, from that player's game"
 run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false' crimeleader crimemember
+
+echo "== Plus server: a downed party member is revived by a partner, and dies once the whole party is down"
+run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false' reviveleader revivemember
 
 # With SOAK_SECONDS set: two players stay connected and chat for that long (FakePlayers soak)
 if [[ -n "${SOAK_SECONDS:-}" ]]; then
