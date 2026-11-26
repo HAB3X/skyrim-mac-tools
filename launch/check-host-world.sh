@@ -19,6 +19,8 @@
 #    aren't the host (FakePlayers votehost / votetarget / votevoter).
 # 9. A host world server keeping its world (Gameplay:bKeepWorld): a chest's contents survive the server being killed
 #    and started again in the same folder (FakePlayers worldstore / worldload).
+# 10. A party member with a bounty gets the guards of that hold near them, the leader can't claim them back meanwhile, and
+#     paying the bounty returns them to the leader (FakePlayers crimeleader / crimemember).
 # With SOAK_SECONDS set, also two players connected and chatting for that long (FakePlayers soak).
 # 4. With a v1.8.4 server folder (official, or our mac release's): this build joining it in its protocol and chatting
 #    (FakePlayers listen184 / talk184).
@@ -263,6 +265,9 @@ run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=f
 
 echo "== Plus server: each player loots their own copy of a container"
 run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false\n[Gameplay]\nbPerPlayerLoot=true' ownlootfirst ownlootsecond
+
+echo "== Plus server: a guard deals with the player whose bounty it is, from that player's game"
+run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false' crimeleader crimemember
 
 # With SOAK_SECONDS set: two players stay connected and chat for that long (FakePlayers soak)
 if [[ -n "${SOAK_SECONDS:-}" ]]; then
