@@ -58,15 +58,17 @@ What the logs show (M4, 16 GB, 1800×1169 borderless on a 120 Hz screen, DXMT fo
   averaged 3.4 ms a frame and rose to 11–19 ms in its worst intervals, where the game fell to 27–28 fps. In the
   other sessions it averages 0.4–1.7 ms.
 
-Recommendations (no defaults changed, because none of the above shows a setting that is wrong while the game has
-focus):
+What changed because of it:
 
-1. When the game is at 30 fps, click its window or Cmd-Tab to it. If it goes back to 60, it was the background
-   throttle. To play with no throttle: `DXMT_BG_FPS=60 skyrim-play.sh together` (costs power while the game is
-   behind other windows). If clicking doesn't help, it is something else; keep that session's logs
-   (`collect-logs.sh`) before starting the game again.
-2. Keep the previous session's DXMT log before a new start (for example, move `SkyrimSE_d3d11.log` to
-   `SkyrimSE_d3d11.prev.log`), so a slow session can still be read afterwards.
+1. `skyrim-together.sh` now sets `DXMT_BG_FPS=60`, so the background throttle can no longer hold the game at 30 while
+   it is being played; a minimized game still drops to DXMT's minimized cap. This costs some power while the game sits
+   behind other windows; `DXMT_BG_FPS=30 skyrim-play.sh together` brings the old cap back. If a session still sits at
+   30, it is something else: keep that session's logs (`collect-logs.sh`) before starting the game again.
+2. Each start moves the last session's DXMT logs to `SkyrimSE_d3d11.previous.log` and
+   `TPProcess_d3d11.previous.log`, so a slow session can still be read after the next start.
+
+Still to do:
+
 3. Look at the mod's actor-update hook when many players or NPCs are synced: it is the only measured cost that
    grows enough to drop frames.
 4. Leave the frame cap as it is: DXMT's `preferredMaxFrameRate=60` plus SSE Display Tweaks' `FramerateLimit=60`

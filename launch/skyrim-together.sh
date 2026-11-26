@@ -21,6 +21,14 @@ export WINEMSYNC=1
 export ROSETTA_ADVERTISE_AVX=1
 export DXMT_WARM="${DXMT_WARM:-all}"
 export DXMT_LOG_PATH="${DXMT_LOG_PATH:-Z:$HOME/Games/skyrim/logs}"
+# DXMT caps an unfocused game at 30 fps, and also treats the game as unfocused when Wine reports no foreground
+# window: 88 of 191 logged [Perf] intervals sat at exactly 30 fps in play. Keep 60 unless it's minimized
+# (DXMT_BG_FPS_MINIMIZED keeps its own default for that).
+export DXMT_BG_FPS="${DXMT_BG_FPS:-60}"
+# DXMT rewrites its log on every start; keep the previous session's, to see why a session ran slow
+for log in "$HOME/Games/skyrim/logs"/{SkyrimSE,TPProcess}_d3d11.log; do
+  [ -f "$log" ] && mv -f "$log" "${log%.log}.previous.log"
+done
 export DXMT_CONFIG="${DXMT_CONFIG:-d3d11.preferredMaxFrameRate=60;}"
 # Rendering itself as upstream DXMT: the fork's draw/state/resource shortcuts were tuned on Guild Wars 2, and with them
 # Skyrim lost actors and items (invisible). Pacing, warming and the stats above stay. Remove a line to retest that one.
