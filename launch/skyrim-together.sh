@@ -223,6 +223,34 @@ network_check() {   # things on this Mac that keep friends out; prints one WARN 
   return 0
 }
 
+# Game controllers connected to the Mac (HID usage page 1: joystick 4, gamepad 5, multi-axis 8) and whether Wine has
+# made each an XInput controller, the only kind Skyrim reads: winebus records every device it adds under
+# Enum\HID\VID_xxxx&PID_yyyy in the prefix's system.reg, with "&XI_" for its XInput side. One line per controller.
+controller_check() {
+  /usr/sbin/ioreg -r -c IOHIDDevice -l -d 1 -a 2>/dev/null | python3 -I -c 'import plistlib, re, sys
+devices = plistlib.loads(sys.stdin.buffer.read() or plistlib.dumps([]))
+seen = {}
+for line in open(sys.argv[1], encoding="utf-8", errors="replace"):
+    m = re.match(r"\[System\\\\ControlSet001\\\\Enum\\\\HID\\\\VID_([0-9A-F]{4})&PID_([0-9A-F]{4})(&XI_)?", line)
+    if m:
+        key = (int(m[1], 16), int(m[2], 16))
+        seen[key] = seen.get(key, False) or bool(m[3])
+pads = {}
+for d in devices:
+    if d.get("PrimaryUsagePage") == 1 and d.get("PrimaryUsage") in (4, 5, 8):
+        pads[(d.get("VendorID", 0), d.get("ProductID", 0))] = d.get("Product") or "a game controller"
+if not pads:
+    print("No game controller is connected: Skyrim Together plays with the keyboard and mouse. To use one, connect it (USB or Bluetooth) before you start the game.")
+for (vid, pid), name in sorted(pads.items()):
+    ids = f"{vid:04x}:{pid:04x}"
+    if seen.get((vid, pid)):
+        print(f"OK   controller {name} ({ids}): Wine gives it to the game as an XInput (Xbox) controller")
+    elif (vid, pid) in seen:
+        print(f"WARN controller {name} ({ids}): Wine knows it only as a plain HID device, not as an XInput (Xbox) controller, the only kind Skyrim reads: it may not work in game.")
+    else:
+        print(f"WARN controller {name} ({ids}) is connected, but Wine has not seen it yet: start the game with it connected. If the game still ignores it, disconnect it and connect it again while the game runs.")' "$WINEPREFIX/system.reg"
+}
+
 power_check() {   # Low Power Mode slows the CPU and GPU: the game can't hold 60 fps. One WARN line, never stops the game
   /usr/bin/pmset -g 2>/dev/null | /usr/bin/grep -q -E '^ *lowpowermode +1' \
     && echo "WARN Low Power Mode is on: the game runs slower. Turn it off in System Settings, Battery (or Energy)."
@@ -351,7 +379,7 @@ win_path() {   # C:\... inside the prefix's drive_c, D:\... through its dosdevic
 
 mkdir -p "$LOGS"
 case "${1:-play}" in
-  check) check; status=$?; network_check; power_check; exit $status ;;
+  check) check; status=$?; network_check; power_check; controller_check; exit $status ;;
   paths)   # for skyrim-play.sh and collect-logs.sh: where this script found the game, as shell assignments
     printf 'GAMEDIR=%q\nSTORE=%q\nMY_GAMES=%q\nLOAD_ORDER=%q\n' "$GAMEDIR" "$STORE" "$MY_GAMES" "${PLUGINS_TXT%/plugins.txt}" ;;
   update)

@@ -47,6 +47,10 @@ prefix.
   fault" in `skyrim-together.log`). If there is one it runs `collect-logs.sh` and shows a dialog with the zip's path and
   **Relaunch** (`skyrim-play.sh together` with the same build). skyrim-play.sh passes its folder (`ST_LAUNCH_DIR`) so
   the copy in `~/Games` finds `collect-logs.sh`.
+- Controllers: `check` lists each game controller connected to the Mac (`ioreg`, HID joystick/gamepad) and whether
+  Wine has made it an XInput controller, the only kind Skyrim reads (winebus's `Enum\HID\VID_…&PID_…&XI_…` entries in
+  the prefix's `system.reg`), with a hint when it hasn't (start the game with it connected; reconnect it while the game
+  runs). The registry records what Wine has seen, not what a running game sees right now.
 - Plus updates: `ST_VERSION=1.8.4-plus skyrim-together.sh update check` reads the releases of HAB3X/TiltedEvolution
   from GitHub's public API (no sign-in) and prints `UPDATE <tag> <bytes> <installed>` when a `v1.8.4-plus.N` newer than
   the installed build (the version in its `SkyrimTogether.exe`) is out. `update install` downloads that release's zip,
