@@ -134,6 +134,51 @@ Still to do:
 5. Leave the frame cap as it is: DXMT's `preferredMaxFrameRate=60` plus SSE Display Tweaks' `FramerateLimit=60`
    with VSync gives the flat 16.7 ms pacing above.
 
+Measuring (`perf/`, 2026-11-27):
+
+- `perf/bench.sh [together|plain] [label]` is a repeatable run: it starts the game, presses Enter at the main menu
+  (Continue, the newest save; an arrow key first would pick New), then plays a fixed route through
+  `game-input.exe`: 30 s standing, 30 s turning on the spot, 90 s running forward while turning. Then it stops the
+  game and prints one `frametimes.sh` line per part. It waits for `/tmp/skyrim-game.lock` and for no game to be
+  running, turns autosaves off for the run, puts both INIs back afterwards and warns if the Saves folder changed.
+  It sets `DXMT_HITCH_MS=20`, so every frame that missed a 120 Hz vblank gets a `HITCH` line. Other `DXMT_*` and
+  `WINE*` variables you set pass through to the game, for A/B runs. **It brings the game to the front before every
+  input, so only run it while nobody is using the Mac.**
+- `perf/frametimes.sh <SkyrimSE_d3d11.log> [first line]` summarises any DXMT log: frames, fps, frames over 33 and
+  50 ms, the median 99th-percentile frame, the hitch frames by length, how many of them were spent in DXMT, waiting
+  for a drawable, or outside DXMT, and how many intervals the background throttle was on.
+- `perf/game-input.c` (build line at its top, installed as `~/Games/skyrim/tools/game-input.exe`) sends keys and
+  mouse moves through Wine's `SendInput`. The game only takes them while it is the active Mac app and its window is
+  Wine's foreground window. `perf/winid.swift` finds the game window's id, so `screencapture -l` takes the game
+  window alone.
+
+First baseline (Skyrim Together 1.8.4, DXMT f068fc2e3, settings as shipped, other programs running, load average
+8–11, the run was stopped during its third part):
+
+| part | frames | fps | over 33 ms | over 50 ms | 20–34 ms (one vblank late) | worst | hitches outside DXMT |
+|---|---|---|---|---|---|---|---|
+| standing 30 s | 1,975 | 57.8 | 11 (0.56%) | 4 | 37 | 438 ms | 49 of 52 |
+| turning 30 s | 2,168 | 56.9 | 19 (0.88%) | 16 | 51 | 284 ms | 37 of 65 (27 waited for a drawable) |
+
+- Most long frames are spent outside DXMT (the game, the mod or Wine), as in the 2026-11-26 log. Turning adds
+  frames that wait for a drawable, so the GPU or the compositor fell behind there.
+- About 2% of frames are one 120 Hz vblank late (25 ms instead of 16.7): small judder rather than hitches.
+- The 30 fps throttle fix: the patched build logged `the window is in front on macOS ... counted as foreground` in a
+  game session for the first time. The same session also showed the throttle switching on and off while Wine's
+  foreground was another Wine window (pid 852), and the owner was switching apps at the time. It isn't clear yet, so
+  `DXMT_BG_FPS=60` stays (containment). `skyrim-play.sh` (plain Skyrim) doesn't set it.
+- While another agent compiled Skyrim Together (load average 40–57 on 10 cores), the game shared the CPU with the
+  compiler. Builds while playing cost frames. Measure with the Mac otherwise idle.
+
+Still to run (each one is `bench.sh` twice with the change and twice without, on an idle Mac):
+
+6. A full baseline (all three parts; the 90 s run is the streaming test).
+7. `DXMT_RENDER_THREAD_PRIORITY=1`: gives the presenting thread (Skyrim's main thread) the user-interactive QoS
+   class, which keeps it on the performance cores. Wine sets no QoS class. Expected to help the hitches outside DXMT.
+8. SSE Display Tweaks `FramerateLimit=0` (DXMT's 60 fps cap alone): two 60 fps limiters on different clocks may cause
+   the one-vblank-late frames.
+9. Drop `DXMT_BG_FPS=60` once a session with nobody switching apps shows no `BG throttled` lines while in front.
+
 ### Audio
 
 How the game's sound reaches the Mac (read from a `WINEDEBUG=+mmdevapi,+coreaudio` trace and an audio tap,
