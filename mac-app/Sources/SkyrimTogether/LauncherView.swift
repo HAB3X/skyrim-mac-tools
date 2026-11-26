@@ -50,6 +50,18 @@ struct LauncherView: View {
             .keyboardShortcut(.defaultAction)
             .disabled(launcher.activity != nil)
 
+            if edition == .plus, let update = launcher.availableUpdate {
+                HStack {
+                    Label("Skyrim Together Plus \(update.tag) is out", systemImage: "arrow.down.circle")
+                    Spacer()
+                    Button(launcher.activity == .updating ? "Updating…" : "Update to \(update.shortName)") {
+                        Task { await launcher.installUpdate(update) }
+                    }
+                    .disabled(launcher.activity != nil)
+                    .help("Downloads \(launcher.megabytes(update.bytes)), checks it and installs it; the current build is kept to go back to")
+                }
+            }
+
             Grid(horizontalSpacing: 8, verticalSpacing: 8) {
                 GridRow {
                     Button {

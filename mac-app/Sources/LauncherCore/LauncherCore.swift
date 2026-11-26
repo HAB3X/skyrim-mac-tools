@@ -56,6 +56,13 @@ public struct CheckItem: Identifiable, Equatable, Sendable {
     /// A command the line asks the user to run in Terminal (the indented line under it), e.g. the firewall fix.
     public var command: String?
 
+    public init(id: Int, kind: Kind, text: String, command: String? = nil) {
+        self.id = id
+        self.kind = kind
+        self.text = text
+        self.command = command
+    }
+
     private static let prefixes: [(String, Kind)] = [("OK ", .ok), ("MISS ", .missing), ("WARN ", .warning), ("FAIL ", .failure)]
 
     public static func parse(_ output: String) -> [CheckItem] {
@@ -79,5 +86,25 @@ public struct CheckItem: Identifiable, Equatable, Sendable {
         var text = text.trimmingCharacters(in: .whitespaces)
         if text.hasSuffix(" In Terminal:") { text.removeLast(" In Terminal:".count) }
         return text.prefix(1).uppercased() + text.dropFirst()
+    }
+}
+
+/// A newer Plus release, as `skyrim-together.sh update check` reports it: "UPDATE v1.8.4-plus.4 346133235 v1.8.4-plus.3"
+/// (tag, zip size in bytes, the installed build's version or "none"). An up-to-date check prints an OK line instead.
+public struct PlusUpdate: Equatable, Sendable {
+    public let tag: String
+    public let bytes: Int64
+    public let installed: String?
+
+    /// "plus.4"
+    public var shortName: String { tag.split(separator: "-").last.map(String.init) ?? tag }
+
+    public static func parse(_ output: String) -> PlusUpdate? {
+        for line in output.split(whereSeparator: \.isNewline) {
+            let fields = line.split(separator: " ").map(String.init)
+            guard fields.count == 4, fields[0] == "UPDATE", let bytes = Int64(fields[2]) else { continue }
+            return PlusUpdate(tag: fields[1], bytes: bytes, installed: fields[3] == "none" ? nil : fields[3])
+        }
+        return nil
     }
 }

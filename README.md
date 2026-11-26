@@ -34,6 +34,15 @@ prefix (`~/Games/skyrim`).
   focus again, without restarting it. What they did is in `~/Games/skyrim/logs/fix-input.log`. Tested on a test window
   that loses Wine's foreground (`dxmt/focus-test`), not yet in the game; input lost while the mod's overlay is open is the
   mod's (its DirectInput hook) and isn't covered.
+- Plus updates: `ST_VERSION=1.8.4-plus skyrim-together.sh update check` reads the releases of HAB3X/TiltedEvolution
+  from GitHub's public API (no sign-in) and prints `UPDATE <tag> <bytes> <installed>` when a `v1.8.4-plus.N` newer than
+  the installed build (the version in its `SkyrimTogether.exe`) is out. `update install` downloads that release's zip,
+  checks its size and the SHA-256 GitHub lists, unpacks the folder for the installed game (`SkyrimTogether-1.6.1170`
+  for 1.6.1170/1.6.1179, else `SkyrimTogether-1.7.104`) with `Skyrim Together Host.exe` into the build folder Play uses,
+  keeps the server's `config/` (STServer.ini) and moves the replaced build to `<folder>.previous`; Play then installs it
+  into `Data` (the stamp now includes the build's `VERSION`). `update rollback` swaps the two back. Both refuse while
+  the game or its server runs. The app shows **Update to plus.N** when a check finds one. `ST_BUILDS` moves where the
+  build folders are (default `~/Games`).
 - `collect-logs.sh` gathers what's needed to report a problem into `~/Desktop/SkyrimTogether-logs-<date>.zip` and
   prints its path: the newest Wine/DXMT logs, the mod's logs (`tp_client.log`, `cef_debug.log`, server output), Crash
   Logger's `crash-*.log` reports, crash dumps (`crash_UTC_*.dmp`, written next to `SkyrimTogether.exe`), the load

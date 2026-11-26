@@ -4,9 +4,11 @@
 #   skyrim-together.sh server     run a Skyrim Together server here (port 10578, UDP) for friends to join
 #   skyrim-together.sh check      report what is ready and what is missing; changes nothing
 #   skyrim-together.sh fix-input  give the running game its mouse and keyboard back (no restart)
+#   skyrim-together.sh update [check|install|rollback]   Plus build updates from GitHub (ST_VERSION=1.8.4-plus)
 set -u
 
 ST_VERSION=${ST_VERSION:-1.8.4}   # "1.8.4-plus" picks the Plus build (Desktop: Skyrim Together Plus.app)
+ST_BUILDS=${ST_BUILDS:-$HOME/Games}   # where the builds are: skyrim-together-<ST_VERSION>[-sse1.6.1170][-mac]/files
 
 SKYRIM_HOME="$HOME/Games/skyrim"
 export WINEPREFIX="$SKYRIM_HOME/prefix"
@@ -102,8 +104,8 @@ print(f"{ms>>16}.{ms&0xffff}.{ls>>16}.{ls&0xffff}" if i>=0 else "")' "$1"
 # one for 1.6.1170 (Steam) / 1.6.1179 (GOG). Pick the build and Address Library file that match the installed game.
 INSTALLED_VERSION=$([ -n "$GAMEDIR" ] && exe_version "$GAMEDIR/SkyrimSE.exe")
 case "$INSTALLED_VERSION" in
-  1.6.1170.0|1.6.1179.0) ST_FILES="$HOME/Games/skyrim-together-$ST_VERSION-sse1.6.1170/files"; GAME_VERSION=$INSTALLED_VERSION ;;
-  *)                     ST_FILES="$HOME/Games/skyrim-together-$ST_VERSION/files"; GAME_VERSION=1.7.104.0 ;;
+  1.6.1170.0|1.6.1179.0) ST_FILES="$ST_BUILDS/skyrim-together-$ST_VERSION-sse1.6.1170/files"; GAME_VERSION=$INSTALLED_VERSION ;;
+  *)                     ST_FILES="$ST_BUILDS/skyrim-together-$ST_VERSION/files"; GAME_VERSION=1.7.104.0 ;;
 esac
 # A Mac (Wine) build of that release, when there is one, is preferred: the official launcher dies at start-up under
 # Wine (see the README.txt next to the Mac build).
@@ -142,7 +144,8 @@ network_check() {   # things on this Mac that keep friends out; prints one WARN 
 # Copy the release into Data (APFS clones: instant, no extra space). Only files that differ are replaced.
 install_mod() {
   local stamp="$DATA/SkyrimTogetherReborn/.installed-version" want
-  want=$(basename "${ST_FILES%/files}")   # which build: release + game runtime (+ -mac)
+  want=$(basename "${ST_FILES%/files}")   # which build: release + game runtime (+ -mac), and its version when known
+  [ -f "${ST_FILES%/files}/VERSION" ] && want="$want $(cat "${ST_FILES%/files}/VERSION")"
   [ "$(cat "$stamp" 2>/dev/null)" = "$want" ] && return 0
   echo "installing $want into $DATA"
   /bin/cp -cR "$ST_FILES/" "$DATA/" || fail "could not copy Skyrim Together into $DATA"
@@ -161,11 +164,107 @@ enable_plugins() {
     || fail "could not update $PLUGINS_TXT"
 }
 
+# Plus updates. Releases of HAB3X/TiltedEvolution are tagged v1.8.4-plus.N; each has one zip with a
+# SkyrimTogether-1.6.1170 and a SkyrimTogether-1.7.104 folder (what goes into Data for that game runtime).
+RELEASES_API="https://api.github.com/repos/HAB3X/TiltedEvolution/releases?per_page=30"
+
+# The newest Plus release, from GitHub's public API: "<tag> <zip url> <size> <sha256 or ->"
+latest_plus_release() {
+  /usr/bin/curl -sSf --max-time 30 "$RELEASES_API" | python3 -I -c 'import json, re, sys
+best = None
+for r in json.load(sys.stdin):
+    m = re.fullmatch(r"v1\.8\.4-plus\.(\d+)", r["tag_name"])
+    zips = [a for a in r["assets"] if a["name"].endswith(".zip")]
+    if m and zips and not r["draft"] and not r["prerelease"] and (best is None or int(m[1]) > best[0]):
+        best = (int(m[1]), r["tag_name"], zips[0])
+if best is None:
+    sys.exit("no v1.8.4-plus.N release with a zip")
+a = best[2]
+print(best[1], a["browser_download_url"], a["size"], (a.get("digest") or "sha256:-").split(":", 1)[1])'
+}
+
+# The version baked into a build's SkyrimTogether.exe ("v1.8.4-plus.3"), empty when it has none
+build_version() {
+  [ -f "$1/files/SkyrimTogetherReborn/SkyrimTogether.exe" ] || return 0
+  /usr/bin/strings -n 8 "$1/files/SkyrimTogetherReborn/SkyrimTogether.exe" | /usr/bin/grep -m1 -E '^v1\.8\.4-plus\.[0-9]+$'
+}
+
+# "UPDATE <tag> <bytes> <installed>" when a newer Plus release is out, else an OK line
+update_check() {
+  local release tag size have
+  release=$(latest_plus_release) || { echo "FAIL could not read the Skyrim Together releases from GitHub"; return 1; }
+  read -r tag _ size _ <<< "$release"
+  have=$(build_version "${ST_FILES%/files}")
+  if [ -n "$have" ] && [ "${have##*.}" -ge "${tag##*.}" ]; then
+    echo "OK   Skyrim Together Plus $have is the newest release"
+  else
+    echo "UPDATE $tag $size ${have:-none}"
+  fi
+}
+
+# Download the newest Plus release, check it, and make it the build for this game's runtime. The build it replaces
+# stays next to it as <folder>.previous (update rollback swaps them); its config/ (STServer.ini) carries over.
+update_install() {
+  local release tag url size sha target top runtime got
+  /usr/bin/pgrep -f 'SkyrimTogether.exe --exePath|SkyrimTogetherServer.exe' >/dev/null \
+    && fail "Skyrim Together or its server is running: quit them first"
+  release=$(latest_plus_release) || fail "could not read the Skyrim Together releases from GitHub"
+  read -r tag url size sha <<< "$release"
+  [ "$GAME_VERSION" = 1.7.104.0 ] && runtime=SkyrimTogether-1.7.104 || runtime=SkyrimTogether-1.6.1170
+  target="${ST_FILES%/files}"
+  # global, not local: the EXIT trap runs after this function has returned
+  mkdir -p "$ST_BUILDS" && UPDATE_TMP=$(/usr/bin/mktemp -d "$ST_BUILDS/.st-update.XXXXXX") || fail "could not make a folder in $ST_BUILDS"
+  trap '/bin/rm -rf "$UPDATE_TMP"' EXIT
+  local tmp=$UPDATE_TMP
+  echo "downloading $tag ($((size / 1048576)) MB)"
+  /usr/bin/curl -sSfL --retry 2 -o "$tmp/release.zip" "$url" || fail "could not download $url"
+  got=$(/usr/bin/stat -f %z "$tmp/release.zip")
+  [ "$got" = "$size" ] || fail "the download is $got bytes, GitHub lists $size: not installed"
+  if [ "$sha" = - ]; then
+    echo "WARN GitHub lists no SHA-256 for $tag: only its size was checked"
+  else
+    [ "$(/usr/bin/shasum -a 256 "$tmp/release.zip" | /usr/bin/cut -d' ' -f1)" = "$sha" ] \
+      || fail "the download's SHA-256 isn't the one GitHub lists: not installed"
+  fi
+  top=$(/usr/bin/unzip -Z1 "$tmp/release.zip" | /usr/bin/head -1); top=${top%%/*}
+  /usr/bin/unzip -q "$tmp/release.zip" "$top/$runtime/*" "$top/Skyrim Together Host.exe" "$top/PLUS-FEATURES.md" -d "$tmp/x" \
+    && [ -f "$tmp/x/$top/$runtime/SkyrimTogetherReborn/SkyrimTogether.exe" ] || fail "$tag's zip has no $runtime build"
+  mkdir -p "$tmp/new" && /bin/mv "$tmp/x/$top/$runtime" "$tmp/new/files" \
+    && /bin/mv "$tmp/x/$top/Skyrim Together Host.exe" "$tmp/new/files/SkyrimTogetherReborn/" \
+    && /bin/mv "$tmp/x/$top/PLUS-FEATURES.md" "$tmp/new/" && echo "$tag" > "$tmp/new/VERSION" || fail "could not unpack $tag"
+  if [ -d "$target" ]; then
+    [ -d "$target/files/SkyrimTogetherReborn/config" ] \
+      && { /bin/cp -R "$target/files/SkyrimTogetherReborn/config/" "$tmp/new/files/SkyrimTogetherReborn/config/" || fail "could not keep the server settings"; }
+    [ -f "$target/VERSION" ] || build_version "$target" > "$target/VERSION"
+    /bin/rm -rf "$target.previous" && /bin/mv "$target" "$target.previous" || fail "could not set $target aside"
+  fi
+  /bin/mv "$tmp/new" "$target" || fail "could not put $tag in $target"
+  echo "OK   installed $tag in $target; the game gets it at the next Play (the previous build is $target.previous)"
+}
+
+update_rollback() {
+  local target="${ST_FILES%/files}"
+  [ -d "$target.previous" ] || fail "there is no previous build ($target.previous)"
+  /usr/bin/pgrep -f 'SkyrimTogether.exe --exePath|SkyrimTogetherServer.exe' >/dev/null \
+    && fail "Skyrim Together or its server is running: quit them first"
+  /bin/mv "$target" "$target.rollback" && /bin/mv "$target.previous" "$target" && /bin/mv "$target.rollback" "$target.previous" \
+    || fail "could not swap $target and $target.previous"
+  echo "OK   $(cat "$target/VERSION" 2>/dev/null || echo "the previous build") is back in $target; the game gets it at the next Play"
+}
+
 win_path() { printf 'C:%s' "$(printf '%s' "${1#"$WINEPREFIX/drive_c"}" | tr '/' '\\')"; }
 
 mkdir -p "$LOGS"
 case "${1:-play}" in
   check) check; status=$?; network_check; exit $status ;;
+  update)
+    [ "$ST_VERSION" = 1.8.4-plus ] || fail "updates are for the Plus build: ST_VERSION=1.8.4-plus"
+    case "${2:-check}" in
+      check) update_check ;;
+      install) update_install ;;
+      rollback) update_rollback ;;
+      *) echo "usage: $0 update [check|install|rollback]"; exit 2 ;;
+    esac ;;
   fix-input)
     pid=$(game_pid)
     [ -n "$pid" ] || fail "Skyrim Together isn't running"
@@ -215,5 +314,5 @@ case "${1:-play}" in
     bring_to_front &
     disown
     echo "Skyrim Together started (Wine log: $LOGS/skyrim-together.log, mod logs: $DATA/SkyrimTogetherReborn/logs)" ;;
-  *) echo "usage: $0 [play|server|check|fix-input]"; exit 2 ;;
+  *) echo "usage: $0 [play|server|check|fix-input|update]"; exit 2 ;;
 esac

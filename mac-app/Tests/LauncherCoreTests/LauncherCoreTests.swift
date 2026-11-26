@@ -66,3 +66,17 @@ private let checkOutput = """
     #expect(result.status == 3)
     #expect(result.output == "started\nFAIL done\n")
 }
+
+@Test func anUpdateLineNamesTheReleaseItsSizeAndWhatIsInstalled() {
+    let update = PlusUpdate.parse("UPDATE v1.8.4-plus.4 346133235 v1.8.4-plus.3\n")
+    #expect(update == PlusUpdate(tag: "v1.8.4-plus.4", bytes: 346_133_235, installed: "v1.8.4-plus.3"))
+    #expect(update?.shortName == "plus.4")
+    #expect(PlusUpdate.parse("UPDATE v1.8.4-plus.1 345489304 none")?.installed == nil)
+}
+
+// Real output of `skyrim-together.sh update check` with plus.3 installed (2026-11-26), and a failed check
+@Test func noUpdateWhenTheCheckSaysOKOrFailed() {
+    #expect(PlusUpdate.parse("OK   Skyrim Together Plus v1.8.4-plus.3 is the newest release\n") == nil)
+    #expect(PlusUpdate.parse("FAIL could not read the Skyrim Together releases from GitHub\n") == nil)
+    #expect(PlusUpdate.parse("UPDATE v1.8.4-plus.4 lots none") == nil)
+}

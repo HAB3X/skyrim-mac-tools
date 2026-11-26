@@ -6,7 +6,7 @@ import Observation
 @MainActor
 @Observable
 final class Launcher {
-    enum Activity: Equatable { case checking, starting, collecting, fixingInput }
+    enum Activity: Equatable { case checking, starting, collecting, fixingInput, updating }
 
     struct Status: Equatable {
         enum Tone { case neutral, success, problem }
@@ -21,6 +21,8 @@ final class Launcher {
     private(set) var hostRunning = false
     private(set) var checkItems: [CheckItem] = []
     private(set) var checkedEdition: Edition?
+    /// A newer Plus release than the installed build, found by the last check of the Plus edition
+    private(set) var availableUpdate: PlusUpdate?
     private(set) var status = Status(text: "Ready")
 
     init() {
@@ -50,6 +52,14 @@ final class Launcher {
         guard let result = await run(folder.url(for: .together), ["check"], edition) else { return }
         checkItems = CheckItem.parse(result.output)
         checkedEdition = edition
+        availableUpdate = nil
+        if edition == .plus, let updateCheck = await run(folder.url(for: .together), ["update", "check"], edition) {
+            availableUpdate = PlusUpdate.parse(updateCheck.output)
+            if updateCheck.status != 0 {   // shown with the setup, not hidden: the release list couldn't be read
+                let reason = CheckItem.parse(updateCheck.output).last?.text ?? "status \(updateCheck.status)"
+                checkItems.append(CheckItem(id: checkItems.count, kind: .warning, text: "Couldn't check for updates: \(reason)"))
+            }
+        }
         let missing = checkItems.filter { $0.kind == .missing || $0.kind == .failure }.count
         let warnings = checkItems.filter { $0.kind == .warning }.count
         status = switch (missing, warnings) {
@@ -94,6 +104,23 @@ final class Launcher {
             let reason = CheckItem.parse(result.output).last { $0.kind == .failure }?.text ?? "status \(result.status)"
             status = Status(text: "Couldn't fix the input: \(reason)", tone: .problem)
         }
+    }
+
+    /// Downloads and installs the newer Plus release; the build it replaces is kept for `update rollback`.
+    func installUpdate(_ update: PlusUpdate) async {
+        guard activity == nil, case .success(let folder) = scripts else { return }
+        activity = .updating
+        status = Status(text: "Downloading and installing Skyrim Together Plus \(update.tag) (\(megabytes(update.bytes)))…")
+        defer { activity = nil }
+        guard let result = await run(folder.url(for: .together), ["update", "install"], .plus) else { return }
+        let items = CheckItem.parse(result.output)
+        guard result.status == 0 else {
+            let reason = items.last { $0.kind == .failure }?.text ?? "status \(result.status)"
+            status = Status(text: "Couldn't update: \(reason)", tone: .problem)
+            return
+        }
+        availableUpdate = nil
+        status = Status(text: "Updated to \(update.tag). The game gets it the next time you press Play.", tone: .success)
     }
 
     func host(_ edition: Edition) async {
@@ -141,6 +168,10 @@ final class Launcher {
     private func gameIsRunning() async -> Bool {
         let result = try? await ScriptRunner.run(URL(filePath: "/usr/bin/pgrep"), arguments: ["-f", "SkyrimTogether.exe --exePath"])
         return result?.status == 0
+    }
+
+    func megabytes(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     }
 
     private func count(_ n: Int, _ noun: String) -> String {
