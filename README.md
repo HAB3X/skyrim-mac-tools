@@ -34,6 +34,9 @@ prefix (`~/Games/skyrim`).
   focus again, without restarting it. What they did is in `~/Games/skyrim/logs/fix-input.log`. Tested on a test window
   that loses Wine's foreground (`dxmt/focus-test`), not yet in the game; input lost while the mod's overlay is open is the
   mod's (its DirectInput hook) and isn't covered.
+- Keeping the Mac awake: while the game runs, the launcher holds `caffeinate -dis -w <game pid>` (no display sleep,
+  idle sleep or, on power, system sleep; it ends with the game). `check` and Play warn when Low Power Mode is on
+  (`pmset -g` shows `lowpowermode 1`), which keeps the game from holding 60 fps.
 - Plus updates: `ST_VERSION=1.8.4-plus skyrim-together.sh update check` reads the releases of HAB3X/TiltedEvolution
   from GitHub's public API (no sign-in) and prints `UPDATE <tag> <bytes> <installed>` when a `v1.8.4-plus.N` newer than
   the installed build (the version in its `SkyrimTogether.exe`) is out. `update install` downloads that release's zip,

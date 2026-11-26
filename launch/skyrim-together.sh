@@ -71,6 +71,8 @@ bring_to_front() {
     pid=""
   done
   [ -n "$pid" ] || return
+  # Keep the Mac and its display awake while the game runs (no screen saver or sleep mid-session); ends with the game
+  /usr/bin/caffeinate -dis -w "$pid" &
   make_frontmost "$pid"
   fix_input --watch >> "$LOGS/fix-input.log" 2>&1 &   # inside Wine: no foreground window at all -> the game's
   while /bin/kill -0 "$pid" 2>/dev/null; do
@@ -138,6 +140,12 @@ network_check() {   # things on this Mac that keep friends out; prints one WARN 
     echo "WARN the Mac firewall blocks Wine: friends can't join a game you host. In Terminal:"
     printf '       sudo %q --add %q && sudo %q --unblockapp %q\n' "$fw" "$WINE" "$fw" "$WINE"
   fi
+  return 0
+}
+
+power_check() {   # Low Power Mode slows the CPU and GPU: the game can't hold 60 fps. One WARN line, never stops the game
+  /usr/bin/pmset -g 2>/dev/null | /usr/bin/grep -q -E '^ *lowpowermode +1' \
+    && echo "WARN Low Power Mode is on: the game runs slower. Turn it off in System Settings, Battery (or Energy)."
   return 0
 }
 
@@ -256,7 +264,7 @@ win_path() { printf 'C:%s' "$(printf '%s' "${1#"$WINEPREFIX/drive_c"}" | tr '/' 
 
 mkdir -p "$LOGS"
 case "${1:-play}" in
-  check) check; status=$?; network_check; exit $status ;;
+  check) check; status=$?; network_check; power_check; exit $status ;;
   update)
     [ "$ST_VERSION" = 1.8.4-plus ] || fail "updates are for the Plus build: ST_VERSION=1.8.4-plus"
     case "${2:-check}" in
@@ -277,7 +285,7 @@ case "${1:-play}" in
     exec "$WINE" SkyrimTogetherServer.exe ;;
   play)
     # Hosting needs the network open; the game's own check says the same in chat once a server runs
-    warnings=$(network_check)
+    warnings=$(network_check; power_check)
     if [ -n "$warnings" ]; then
       echo "$warnings"
       /usr/bin/osascript -e "display notification \"$(printf '%s' "$warnings" | /usr/bin/head -1 | /usr/bin/cut -c6- | /usr/bin/tr -d '\"')\" with title \"Skyrim Together\"" >/dev/null 2>&1
