@@ -21,10 +21,43 @@ export WINEPREFIX="$SKYRIM_HOME/prefix" WINEMSYNC=1 WINEDEBUG=-all
 export DYLD_FALLBACK_LIBRARY_PATH="$SKYRIM_HOME/wine/lib:/usr/lib"
 WINE="$SKYRIM_HOME/wine/bin/wine"
 WORK=$(mktemp -d)
-trap 'pkill -9 -f "SkyrimTogetherServer.exe|FakePlayers.exe"; rm -rf "$WORK"' EXIT
+# Every process this script starts writes its PID to a *.pid file in $WORK; only those are ever stopped (other runs and
+# a game's own server share the machine)
+stop_started() {
+    local pidfile
+    for pidfile in "$WORK"/**/*.pid(N); do
+        kill -9 "$(<"$pidfile")" 2>/dev/null
+        rm -f "$pidfile"
+    done
+    sleep 1
+}
+trap 'stop_started; rm -rf "$WORK"' EXIT
 FAILED=0
-# A server left running would take the port
-pkill -9 -f "SkyrimTogetherServer.exe|FakePlayers.exe"; sleep 1
+# A server left running would take the port: say so rather than stop someone else's
+if lsof -nP -iUDP:10578 > /dev/null 2>&1; then
+    echo "FAIL UDP port 10578 is in use by another process (lsof -iUDP:10578)" >&2
+    exit 1
+fi
+
+# start_player <folder for its log and pid> <name> <role> [endpoint]: FakePlayers in the background
+start_player() {
+    (cd "$PLAYERS_DIR" && exec "$WINE" FakePlayers.exe "$3" "${4:-127.0.0.1:10578}" > "$1/$2.raw" 2>/dev/null) &
+    print -r -- $! > "$1/$2.pid"
+}
+
+# run_player <folder> <name> <role> [endpoint]: FakePlayers in the foreground, its log in <folder>/<name>.log
+run_player() {
+    (cd "$PLAYERS_DIR" && "$WINE" FakePlayers.exe "$3" "${4:-127.0.0.1:10578}" 2>/dev/null) | tr -d '\r' > "$1/$2.log"
+}
+
+# wait_player <folder> <name>: waits up to 30 s for a background player to exit, then makes its log
+wait_player() {
+    local pid=$(<"$1/$2.pid")
+    for _ in {1..30}; do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+    kill -9 "$pid" 2>/dev/null
+    rm -f "$1/$2.pid"
+    tr -d '\r' < "$1/$2.raw" > "$1/$2.log"
+}
 
 # start_server <server folder> <ini text> <name> [required mods]: a server from a copy of the folder; prints its folder
 start_server() {
@@ -34,7 +67,8 @@ start_server() {
     print -r -- "$2" > "$dir/config/STServer.ini"
     [[ -n "${4:-}" ]] && print -r -- "$4" > "$dir/config/required-mods.txt" && print -r -- $'NiceToHave.esp\nSomeMod.esp' > "$dir/config/recommended-mods.txt"
 
-    (cd "$dir" && "$WINE" SkyrimTogetherServer.exe < /dev/null > "$dir/server.log" 2>&1 &)
+    (cd "$dir" && exec "$WINE" SkyrimTogetherServer.exe < /dev/null > "$dir/server.log" 2>&1) &
+    print -r -- $! > "$dir/server.pid"
     for _ in {1..30}; do grep -aq "started on port" "$dir/server.log" && break; sleep 1; done
     grep -aq "started on port" "$dir/server.log" || { echo "FAIL the server in $1 didn't start" >&2; return 1; }
     print -r -- "$dir"
@@ -45,7 +79,7 @@ report() {
     grep -h "PASS\|FAIL" "$@"
     grep -qh "FAIL" "$@" && FAILED=1
     grep -q "ALL CHECKS PASSED" "${@[-1]}" || FAILED=1
-    pkill -9 -f "SkyrimTogetherServer.exe"; sleep 1
+    stop_started
 }
 
 # run_pair <server folder> <ini text> <first role> <second role>: the first role in the background, then the second
@@ -53,10 +87,10 @@ run_pair() {
     local dir
     dir=$(start_server "$1" "$2" "$3") || { FAILED=1; return; }
 
-    (cd "$PLAYERS_DIR" && "$WINE" FakePlayers.exe "$3" 127.0.0.1:10578 2>/dev/null | tr -d '\r' > "$dir/first.log" &)
+    start_player "$dir" first "$3"
     sleep 5
-    (cd "$PLAYERS_DIR" && "$WINE" FakePlayers.exe "$4" 127.0.0.1:10578 2>/dev/null | tr -d '\r' > "$dir/second.log")
-    for _ in {1..30}; do pgrep -f "FakePlayers.exe $3" > /dev/null || break; sleep 1; done
+    run_player "$dir" second "$4"
+    wait_player "$dir" first
     report "$dir/first.log" "$dir/second.log"
 }
 
