@@ -1,11 +1,15 @@
 #!/bin/zsh
-# Checks a Plus server's host world mode and local network discovery with two fake players, without the game.
-#   check-host-world.sh <folder with SkyrimTogetherServer.exe> <folder with FakePlayers.exe>
-# Runs a server with Gameplay:bHostWorld on, UPnP off and an empty password from a copy of the folder's config, then
-# FakePlayers.exe as host and as joiner. Prints one line per check; exits 0 when all pass.
+# Checks multiplayer with fake players, without the game:
+#   check-host-world.sh <Plus server folder> <folder with FakePlayers.exe> [official v1.8.4 server folder]
+# 1. A Plus server (SkyrimTogetherServer.exe, STServer.dll) with host world on and UPnP off: host world mode and local
+#    network discovery (FakePlayers host / join).
+# 2. With a v1.8.4 server folder (official, or our mac release's): this build joining it in its protocol and chatting
+#    (FakePlayers listen184 / talk184).
+# Prints one line per check; exits 0 when all pass.
 set -u
-SERVER_DIR=${1:?folder with SkyrimTogetherServer.exe}
+PLUS_SERVER=${1:?Plus server folder}
 PLAYERS_DIR=${2:?folder with FakePlayers.exe}
+OFFICIAL_SERVER=${3:-}
 SKYRIM_HOME=${SKYRIM_HOME:-$HOME/Games/skyrim}
 
 export WINEPREFIX="$SKYRIM_HOME/prefix" WINEMSYNC=1 WINEDEBUG=-all
@@ -14,26 +18,38 @@ export DYLD_FALLBACK_LIBRARY_PATH="$SKYRIM_HOME/wine/lib:/usr/lib"
 WINE="$SKYRIM_HOME/wine/bin/wine"
 WORK=$(mktemp -d)
 trap 'pkill -9 -f "SkyrimTogetherServer.exe|FakePlayers.exe"; rm -rf "$WORK"' EXIT
+FAILED=0
+# A server left running would take the port
+pkill -9 -f "SkyrimTogetherServer.exe|FakePlayers.exe"; sleep 1
 
-# The server reads config\STServer.ini next to it: run a copy with the settings the check needs
-cp "$SERVER_DIR"/SkyrimTogetherServer.exe "$SERVER_DIR"/STServer.dll "$WORK"/ || exit 1
-mkdir -p "$WORK/config"
-cat > "$WORK/config/STServer.ini" <<'INI'
-[GameServer]
-sPassword=
-bUPnP=false
-[Gameplay]
-bHostWorld=true
-INI
+# run_pair <server folder> <ini text> <first role> <second role>: a server from a copy of the folder, the first role in
+# the background, then the second
+run_pair() {
+    local dir="$WORK/server-$3"
+    mkdir -p "$dir/config"
+    cp "$1"/SkyrimTogetherServer.exe "$1"/STServer.dll "$dir"/ || exit 1
+    print -r -- "$2" > "$dir/config/STServer.ini"
 
-cd "$WORK" && (tail -f /dev/null | "$WINE" SkyrimTogetherServer.exe > "$WORK/server.log" 2>&1 &)
-for _ in {1..30}; do grep -aq "started on port" "$WORK/server.log" && break; sleep 1; done
-grep -aq "started on port" "$WORK/server.log" || { echo "FAIL the server didn't start"; tail -5 "$WORK/server.log"; exit 1; }
+    (cd "$dir" && tail -f /dev/null | "$WINE" SkyrimTogetherServer.exe > "$dir/server.log" 2>&1 &)
+    for _ in {1..30}; do grep -aq "started on port" "$dir/server.log" && break; sleep 1; done
+    grep -aq "started on port" "$dir/server.log" || { echo "FAIL the server in $1 didn't start"; FAILED=1; return; }
 
-cd "$PLAYERS_DIR"
-("$WINE" FakePlayers.exe host 127.0.0.1:10578 2>/dev/null | tr -d '\r' > "$WORK/host.log" &)
-sleep 5
-"$WINE" FakePlayers.exe join 127.0.0.1:10578 2>/dev/null | tr -d '\r' > "$WORK/join.log"
-for _ in {1..25}; do pgrep -f "FakePlayers.exe host" > /dev/null || break; sleep 1; done
-grep -h "PASS\|FAIL" "$WORK/host.log" "$WORK/join.log"
-! grep -qh "FAIL" "$WORK/host.log" "$WORK/join.log" && grep -q "ALL CHECKS PASSED" "$WORK/join.log"
+    (cd "$PLAYERS_DIR" && "$WINE" FakePlayers.exe "$3" 127.0.0.1:10578 2>/dev/null | tr -d '\r' > "$dir/first.log" &)
+    sleep 5
+    (cd "$PLAYERS_DIR" && "$WINE" FakePlayers.exe "$4" 127.0.0.1:10578 2>/dev/null | tr -d '\r' > "$dir/second.log")
+    for _ in {1..30}; do pgrep -f "FakePlayers.exe $3" > /dev/null || break; sleep 1; done
+    grep -h "PASS\|FAIL" "$dir/first.log" "$dir/second.log"
+    grep -qh "FAIL" "$dir/first.log" "$dir/second.log" && FAILED=1
+    grep -q "ALL CHECKS PASSED" "$dir/second.log" || FAILED=1
+    pkill -9 -f "SkyrimTogetherServer.exe"; sleep 1
+}
+
+echo "== Plus server: host world and local network discovery"
+run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\n[Gameplay]\nbHostWorld=true' host join
+
+if [[ -n "$OFFICIAL_SERVER" ]]; then
+    echo "== Official v1.8.4 server: joining in its protocol"
+    run_pair "$OFFICIAL_SERVER" $'[GameServer]\nsPassword=' listen184 talk184
+fi
+
+exit $FAILED
