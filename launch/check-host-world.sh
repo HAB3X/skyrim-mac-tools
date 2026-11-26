@@ -13,6 +13,7 @@
 #    / lostreturn).
 # 5. A Plus server with the router closed and SkyrimTogetherRelay (from the FakePlayers folder) as its way in: host world
 #    with both players joining through the relay.
+# 6. A player with another Plus release refused, and the host told both versions (FakePlayers oldversion).
 # With SOAK_SECONDS set, also two players connected and chatting for that long (FakePlayers soak).
 # 4. With a v1.8.4 server folder (official, or our mac release's): this build joining it in its protocol and chatting
 #    (FakePlayers listen184 / talk184).
@@ -161,6 +162,16 @@ if dir=$(start_server "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nsR
     grep -aq "Public address: 127.0.0.1:10601 (through the relay)" "$dir/server.log" && echo "PASS the server's invite address is the relay's port" ||
         { echo "FAIL the server didn't get a port from the relay"; FAILED=1; }
     report "$dir/first.log" "$dir/second.log"
+else
+    FAILED=1
+fi
+
+echo "== Plus server: a player with another Plus release"
+if dir=$(start_server "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false' version); then
+    run_player "$dir" version oldversion
+    grep -aq "\[Host\] FakeOldBuild couldn't join: they have Skyrim Together v1.8.4-plus.0" "$dir/server.log" &&
+        echo "PASS the host is told which version the player had" || { echo "FAIL the host isn't told the player's version"; FAILED=1; }
+    report "$dir/version.log"
 else
     FAILED=1
 fi
