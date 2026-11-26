@@ -22,7 +22,18 @@ prefix (`~/Games/skyrim`).
   build.
 - `skyrim-together.sh` installs the Skyrim Together build that matches the installed game version into `Data`,
   enables its plugins and starts it. `skyrim-together.sh server` runs a server (UDP 10578), `check` reports what is
-  missing.
+  missing, `fix-input` gives a running game its mouse and keyboard back (below).
+- Mouse and keyboard: Skyrim reads them through DirectInput, which only works while the game's window is Wine's
+  foreground window, and Wine's foreground isn't macOS's. After a Cmd-Tab Wine can be left with no foreground window
+  while the game is the active Mac app, and the game then ignored the mouse and keyboard until it was restarted.
+  `launch/fix-input.c` (built to `~/Games/skyrim/tools/fix-input.exe`, the build line is in the file) makes the game's
+  window Wine's foreground window again. While the game runs, the launcher runs it each time the game becomes the active
+  Mac app again, and keeps `fix-input.exe --watch` running in Wine, which does it within half a second whenever Wine has
+  no foreground window at all (it never makes the game the active Mac app by itself). `skyrim-together.sh fix-input` (the
+  app's **Fix Mouse & Keyboard**) brings the game to the front, releases Wine's cursor clip and gives the game Wine's
+  focus again, without restarting it. What they did is in `~/Games/skyrim/logs/fix-input.log`. Tested on a test window
+  that loses Wine's foreground (`dxmt/focus-test`), not yet in the game; input lost while the mod's overlay is open is the
+  mod's (its DirectInput hook) and isn't covered.
 - `collect-logs.sh` gathers what's needed to report a problem into `~/Desktop/SkyrimTogether-logs-<date>.zip` and
   prints its path: the newest Wine/DXMT logs, the mod's logs (`tp_client.log`, `cef_debug.log`, server output), Crash
   Logger's `crash-*.log` reports, crash dumps (`crash_UTC_*.dmp`, written next to `SkyrimTogether.exe`), the load
@@ -105,7 +116,7 @@ Our patches to the DXMT build the game uses (jdrly's gw2-on-mac fork at da80816)
 ## mac-app/
 
 `Skyrim Together.app`, a one-window SwiftUI launcher (macOS 14+) over the scripts in `launch/`: **Play** (runs
-`skyrim-play.sh together`; the Base/Plus switch sets `ST_VERSION`), **Host a Game** (`skyrim-host-app.sh`), **Check
+`skyrim-play.sh together`; the Base/Plus switch sets `ST_VERSION`), **Host a Game** (`skyrim-host-app.sh`), **Fix Mouse & Keyboard** (`skyrim-together.sh fix-input`), **Check
 Setup** (`skyrim-together.sh check`, shown as rows with icons and the firewall fix ready to copy; it also runs when the
 window opens and when the build changes), **Collect Logs** (`collect-logs.sh`, then shows the zip in Finder) and a
 status line. It never runs `sudo`: the firewall command is copied for you to paste into Terminal. Play is refused while

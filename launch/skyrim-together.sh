@@ -3,6 +3,7 @@
 #   skyrim-together.sh            install/update the mod into the game if needed, then start Skyrim Together
 #   skyrim-together.sh server     run a Skyrim Together server here (port 10578, UDP) for friends to join
 #   skyrim-together.sh check      report what is ready and what is missing; changes nothing
+#   skyrim-together.sh fix-input  give the running game its mouse and keyboard back (no restart)
 set -u
 
 ST_VERSION=${ST_VERSION:-1.8.4}   # "1.8.4-plus" picks the Plus build (Desktop: Skyrim Together Plus.app)
@@ -26,10 +27,6 @@ export DXMT_LOG_PATH="${DXMT_LOG_PATH:-Z:$HOME/Games/skyrim/logs}"
 # counts the active app's on-screen window as foreground; containment until a game session confirms that: keep 60
 # unless it's minimized (DXMT_BG_FPS_MINIMIZED keeps its own default for that).
 export DXMT_BG_FPS="${DXMT_BG_FPS:-60}"
-# DXMT rewrites its log on every start; keep the previous session's, to see why a session ran slow
-for log in "$HOME/Games/skyrim/logs"/{SkyrimSE,TPProcess}_d3d11.log; do
-  [ -f "$log" ] && mv -f "$log" "${log%.log}.previous.log"
-done
 export DXMT_CONFIG="${DXMT_CONFIG:-d3d11.preferredMaxFrameRate=60;}"
 # Rendering itself as upstream DXMT: the fork's draw/state/resource shortcuts were tuned on Guild Wars 2, and with them
 # Skyrim lost actors and items (invisible). Pacing, warming and the stats above stay. Remove a line to retest that one.
@@ -40,20 +37,45 @@ export DXMT_MAP_FAST=0 DXMT_UNRETAINED=0 DXMT_RELEASE_POOL=0 DXMT_RESIDENCY_SET=
 [ -f "$SKYRIM_HOME/config/metal-hud" ] && export MTL_HUD_ENABLED=1
 WINE="$SKYRIM_HOME/wine/bin/wine"
 
+game_pid() { /usr/bin/pgrep -f "SkyrimTogether.exe --exePath" | /usr/bin/tail -1; }
+make_frontmost() {   # $1: pid of a Mac app
+  /usr/bin/osascript -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $1) to true" >/dev/null 2>&1 \
+    || { echo "Couldn't make the game the active app (allow this app to control System Events in Privacy & Security, Automation)" >&2; return 1; }
+}
+front_pid() { /usr/bin/lsappinfo info -only pid "$(/usr/bin/lsappinfo front)" | /usr/bin/sed -n 's/.*"pid"=\([0-9]*\).*/\1/p'; }
+
+# Skyrim reads the mouse and keyboard through DirectInput, which only works while the game's window is Wine's
+# foreground window, and Wine's foreground isn't macOS's: after a Cmd-Tab Wine can be left with none while the game is
+# the active Mac app, and the game then gets no input until it restarts. fix-input.exe (launch/fix-input.c) makes the
+# game's window Wine's foreground window again; --reset also releases the cursor clip and re-activates the window.
+FIX_INPUT="$SKYRIM_HOME/tools/fix-input.exe"
+fix_input() {
+  [ -f "$FIX_INPUT" ] || { echo "FAIL $FIX_INPUT is missing: x86_64-w64-mingw32-gcc -O2 -s launch/fix-input.c -o $FIX_INPUT -luser32 -lpsapi"; return 1; }
+  "$WINE" "$FIX_INPUT" "$@"
+}
+
 # Wine opens the game's window without making it the active app: macOS keeps the keyboard and mouse with whatever
-# started it (Terminal, another app). Once the window is there, make the game the active app, once.
+# started it (Terminal, another app). Once the window is there, make the game the active app; then, for as long as the
+# game runs, give Wine's foreground back to the game each time it becomes the active Mac app again (Cmd-Tab, Dock),
+# and whenever Wine has no foreground window at all (fix-input.exe --watch).
 bring_to_front() {
-  local pid=""
+  local pid="" front last=""
   for _ in {1..120}; do
     sleep 1
-    pid=$(/usr/bin/pgrep -f "SkyrimTogether.exe --exePath" | /usr/bin/tail -1)
+    pid=$(game_pid)
     [ -n "$pid" ] || continue
     windows=$(/usr/bin/osascript -e "tell application \"System Events\" to count windows of (first process whose unix id is $pid)" 2>/dev/null)
-    if [ "${windows:-0}" -gt 0 ]; then
-      /usr/bin/osascript -e "tell application \"System Events\" to set frontmost of (first process whose unix id is $pid) to true" >/dev/null 2>&1 \
-        || echo "Couldn't make the game the active app (allow this app to control System Events in Privacy & Security, Automation)" >&2
-      return
-    fi
+    [ "${windows:-0}" -gt 0 ] && break
+    pid=""
+  done
+  [ -n "$pid" ] || return
+  make_frontmost "$pid"
+  fix_input --watch >> "$LOGS/fix-input.log" 2>&1 &   # inside Wine: no foreground window at all -> the game's
+  while /bin/kill -0 "$pid" 2>/dev/null; do
+    front=$(front_pid)
+    [ "$front" = "$pid" ] && [ "$last" != "$pid" ] && fix_input >> "$LOGS/fix-input.log" 2>&1
+    last=$front
+    sleep 1
   done
 }
 WINESERVER="$SKYRIM_HOME/wine/bin/wineserver"
@@ -144,6 +166,11 @@ win_path() { printf 'C:%s' "$(printf '%s' "${1#"$WINEPREFIX/drive_c"}" | tr '/' 
 mkdir -p "$LOGS"
 case "${1:-play}" in
   check) check; status=$?; network_check; exit $status ;;
+  fix-input)
+    pid=$(game_pid)
+    [ -n "$pid" ] || fail "Skyrim Together isn't running"
+    make_frontmost "$pid"
+    fix_input --reset ;;
   server)
     [ -d "$ST_FILES/SkyrimTogetherReborn" ] || fail "Skyrim Together files missing in $ST_FILES"
     cd "$ST_FILES/SkyrimTogetherReborn" || exit 1
@@ -178,11 +205,15 @@ case "${1:-play}" in
         [ -f "$WINEPREFIX/drive_c/windows/system32/$n.dll" ] && "$WINE" reg add "$key" /v "$n" /t REG_SZ /d native,builtin /f >/dev/null 2>&1
       done
     fi
+    # DXMT rewrites its log on every start; keep the previous session's, to see why a session ran slow
+    for log in "$LOGS"/{SkyrimSE,TPProcess}_d3d11.log; do
+      [ -f "$log" ] && mv -f "$log" "${log%.log}.previous.log"
+    done
     cd "$DATA/SkyrimTogetherReborn" || exit 1
     "$WINE" SkyrimTogether.exe --exePath "$(win_path "$GAMEDIR/SkyrimSE.exe")" > "$LOGS/skyrim-together.log" 2>&1 &
     disown
     bring_to_front &
     disown
     echo "Skyrim Together started (Wine log: $LOGS/skyrim-together.log, mod logs: $DATA/SkyrimTogetherReborn/logs)" ;;
-  *) echo "usage: $0 [play|server|check]"; exit 2 ;;
+  *) echo "usage: $0 [play|server|check|fix-input]"; exit 2 ;;
 esac

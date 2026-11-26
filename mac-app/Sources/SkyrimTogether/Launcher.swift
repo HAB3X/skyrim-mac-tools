@@ -6,7 +6,7 @@ import Observation
 @MainActor
 @Observable
 final class Launcher {
-    enum Activity: Equatable { case checking, starting, collecting }
+    enum Activity: Equatable { case checking, starting, collecting, fixingInput }
 
     struct Status: Equatable {
         enum Tone { case neutral, success, problem }
@@ -77,6 +77,22 @@ final class Launcher {
             checkedEdition = edition
             let reason = items.last { $0.kind == .failure }?.text ?? "the launcher stopped with status \(result.status)"
             status = Status(text: "Couldn't start: \(reason)", tone: .problem)
+        }
+    }
+
+    /// The game lost its mouse and keyboard (it happens after a Cmd-Tab under Wine): bring it to the front and give
+    /// it Wine's focus again, without restarting it.
+    func fixInput(_ edition: Edition) async {
+        guard activity == nil, case .success(let folder) = scripts else { return }
+        activity = .fixingInput
+        status = Status(text: "Giving the game its mouse and keyboard back…")
+        defer { activity = nil }
+        guard let result = await run(folder.url(for: .together), ["fix-input"], edition) else { return }
+        if result.status == 0 {
+            status = Status(text: "Done: the game has the mouse and keyboard again.", tone: .success)
+        } else {
+            let reason = CheckItem.parse(result.output).last { $0.kind == .failure }?.text ?? "status \(result.status)"
+            status = Status(text: "Couldn't fix the input: \(reason)", tone: .problem)
         }
     }
 

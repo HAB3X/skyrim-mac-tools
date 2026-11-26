@@ -50,12 +50,13 @@ struct LauncherView: View {
             .keyboardShortcut(.defaultAction)
             .disabled(launcher.activity != nil)
 
-            HStack(spacing: 8) {
-                Button {
-                    Task { await launcher.host(edition) }
-                } label: {
-                    Label(launcher.hostRunning ? "Host Window Open" : "Host a Game", systemImage: "person.2")
-                        .frame(maxWidth: .infinity)
+            Grid(horizontalSpacing: 8, verticalSpacing: 8) {
+                GridRow {
+                    Button {
+                        Task { await launcher.host(edition) }
+                    } label: {
+                        Label(launcher.hostRunning ? "Host Window Open" : "Host a Game", systemImage: "person.2")
+                            .frame(maxWidth: .infinity)
                 }
                 .disabled(launcher.hostRunning)
                 .help("Opens Skyrim Together Host: server name, password, who is connected, Kick and Ban")
@@ -67,6 +68,15 @@ struct LauncherView: View {
                 }
                 .keyboardShortcut("r")
                 .disabled(launcher.activity != nil)
+                }
+                GridRow {
+                    Button {
+                        Task { await launcher.fixInput(edition) }
+                    } label: {
+                        Label("Fix Mouse & Keyboard", systemImage: "computermouse").frame(maxWidth: .infinity)
+                }
+                .disabled(launcher.activity != nil)
+                .help("When the running game ignores the mouse or keyboard: brings it to the front and gives it the input again, no restart")
 
                 Button {
                     Task { await launcher.collectLogs(edition) }
@@ -75,6 +85,7 @@ struct LauncherView: View {
                 }
                 .disabled(launcher.activity != nil)
                 .help("Zips the game's logs and crash reports to the Desktop, without saves or passwords")
+                }
             }
             .controlSize(.large)
         }

@@ -13,6 +13,7 @@
 
 static LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l) {
   if (m == WM_DESTROY) { PostQuitMessage(0); return 0; }
+  if (m == WM_ACTIVATEAPP) { printf("WM_ACTIVATEAPP %s\n", w ? "activated" : "deactivated"); fflush(stdout); }
   return DefWindowProcW(h, m, w, l);
 }
 
