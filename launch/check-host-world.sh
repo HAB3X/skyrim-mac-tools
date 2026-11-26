@@ -11,6 +11,8 @@
 #    progress drifting from the leader's reported (desyncleader / desyncmember).
 #    Also: a player whose game crashed put back in their party and place when they come back (lostleader / lostmember
 #    / lostreturn).
+# 5. A Plus server with the router closed and SkyrimTogetherRelay (from the FakePlayers folder) as its way in: host world
+#    with both players joining through the relay.
 # With SOAK_SECONDS set, also two players connected and chatting for that long (FakePlayers soak).
 # 4. With a v1.8.4 server folder (official, or our mac release's): this build joining it in its protocol and chatting
 #    (FakePlayers listen184 / talk184).
@@ -141,6 +143,24 @@ if dir=$(start_server "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbL
     run_player "$dir" return lostreturn
     wait_player "$dir" member
     report "$dir/leader.log" "$dir/member.log" "$dir/return.log"
+else
+    FAILED=1
+fi
+
+echo "== Plus server whose router can't be opened: host world through the relay (SkyrimTogetherRelay)"
+mkdir -p "$WORK/relay"
+(cd "$PLAYERS_DIR" && exec "$WINE" SkyrimTogetherRelay.exe > "$WORK/relay/relay.log" 2>&1) &
+print -r -- $! > "$WORK/relay/relay.pid"
+sleep 2
+if dir=$(start_server "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nsRelay=127.0.0.1:10600\n[Gameplay]\nbHostWorld=true' relay); then
+    # The relay's first port goes to the only host
+    start_player "$dir" first host 127.0.0.1:10601
+    sleep 5
+    run_player "$dir" second join 127.0.0.1:10601
+    wait_player "$dir" first
+    grep -aq "Public address: 127.0.0.1:10601 (through the relay)" "$dir/server.log" && echo "PASS the server's invite address is the relay's port" ||
+        { echo "FAIL the server didn't get a port from the relay"; FAILED=1; }
+    report "$dir/first.log" "$dir/second.log"
 else
     FAILED=1
 fi
