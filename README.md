@@ -46,7 +46,7 @@ prefix.
   `crash_UTC_*.dmp` next to `SkyrimTogether.exe`, Crash Logger's `crash-*.log`, or Wine's "Unhandled exception/page
   fault" in `skyrim-together.log`). If there is one it runs `collect-logs.sh` and shows a dialog with the zip's path and
   **Relaunch** (`skyrim-play.sh together` with the same build). skyrim-play.sh passes its folder (`ST_LAUNCH_DIR`) so
-  the copy in `~/Games` finds `collect-logs.sh`.
+  the copy in `~/Games` finds `collect-logs.sh`. What it found and did is in `~/Games/skyrim/logs/crash-recovery.log`.
 - Controllers: `check` lists each game controller connected to the Mac (`ioreg`, HID joystick/gamepad) and whether
   Wine has made it an XInput controller, the only kind Skyrim reads (winebus's `Enum\HID\VID_…&PID_…&XI_…` entries in
   the prefix's `system.reg`), with a hint when it hasn't (start the game with it connected; reconnect it while the game

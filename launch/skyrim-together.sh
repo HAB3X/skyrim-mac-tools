@@ -115,7 +115,7 @@ after_game() {
   local reason zip logs answer
   reason=$(crash_reason)
   [ -n "$reason" ] || return 0
-  echo "the game crashed: $reason" >> "$LOGS/fix-input.log"
+  echo "$(date "+%F %T") the game crashed: $reason" >> "$LOGS/crash-recovery.log"
   if [ -x "$LAUNCH_DIR/collect-logs.sh" ]; then
     zip=$("$LAUNCH_DIR/collect-logs.sh" 2> "$LOGS/collect-logs-after-crash.log" | /usr/bin/tail -1)
     [ -n "$zip" ] && logs="The logs are in $zip (send it with a description of what happened)." \
@@ -124,7 +124,7 @@ after_game() {
     logs="The logs weren't collected: collect-logs.sh isn't in $LAUNCH_DIR."
   fi
   answer=$(crash_dialog "$reason" "$logs")
-  [ "$answer" = Relaunch ] && ST_VERSION=$ST_VERSION /bin/bash "$LAUNCH_DIR/skyrim-play.sh" together >> "$LOGS/fix-input.log" 2>&1
+  [ "$answer" = Relaunch ] && ST_VERSION=$ST_VERSION /bin/bash "$LAUNCH_DIR/skyrim-play.sh" together >> "$LOGS/crash-recovery.log" 2>&1
 }
 WINESERVER="$SKYRIM_HOME/wine/bin/wineserver"
 # The repo's launch/ folder (collect-logs.sh, skyrim-play.sh): skyrim-play.sh passes it, since this script is run from
