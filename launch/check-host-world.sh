@@ -25,6 +25,8 @@
 #     party is down (FakePlayers reviveleader / revivemember).
 # 12. Per player loot on a body: the owner's death item reaches the looter, the owner's looting doesn't, and the looter
 #     takes from its own copy (FakePlayers ownbodyowner / ownbodylooter).
+# 13. Trading: an offer the giver doesn't hold refused, an offer change unconfirming the other side, and a confirmed
+#     trade moving the items once (FakePlayers tradeleader / trademember).
 # With SOAK_SECONDS set, also two players connected and chatting for that long (FakePlayers soak).
 # 4. With a v1.8.4 server folder (official, or our mac release's): this build joining it in its protocol and chatting
 #    (FakePlayers listen184 / talk184).
@@ -278,6 +280,9 @@ run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=f
 
 echo "== Plus server: a downed party member is revived by a partner, and dies once the whole party is down"
 run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false' reviveleader revivemember
+
+echo "== Plus server: two party members trade, both confirm, and nothing is duplicated"
+run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false' tradeleader trademember
 
 # With SOAK_SECONDS set: two players stay connected and chat for that long (FakePlayers soak)
 if [[ -n "${SOAK_SECONDS:-}" ]]; then
