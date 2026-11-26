@@ -23,6 +23,8 @@
 #     paying the bounty returns them to the leader (FakePlayers crimeleader / crimemember).
 # 11. A downed party member revived by the other, a revive of someone who is up refused, and both told when the whole
 #     party is down (FakePlayers reviveleader / revivemember).
+# 12. Per player loot on a body: the owner's death item reaches the looter, the owner's looting doesn't, and the looter
+#     takes from its own copy (FakePlayers ownbodyowner / ownbodylooter).
 # With SOAK_SECONDS set, also two players connected and chatting for that long (FakePlayers soak).
 # 4. With a v1.8.4 server folder (official, or our mac release's): this build joining it in its protocol and chatting
 #    (FakePlayers listen184 / talk184).
@@ -267,6 +269,9 @@ run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=f
 
 echo "== Plus server: each player loots their own copy of a container"
 run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false\n[Gameplay]\nbPerPlayerLoot=true' ownlootfirst ownlootsecond
+
+echo "== Plus server: each player loots their own copy of a body, death items for everyone"
+run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false\n[Gameplay]\nbPerPlayerLoot=true' ownbodyowner ownbodylooter
 
 echo "== Plus server: a guard deals with the player whose bounty it is, from that player's game"
 run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false' crimeleader crimemember
