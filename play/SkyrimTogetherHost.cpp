@@ -1,9 +1,10 @@
 // Skyrim Together Host: run a co-op server from a window.
 //
 // Sits in a release next to SkyrimTogether-1.6.1170 (and Play Skyrim Together.exe). Edits the server's
-// config\STServer.ini (name, password, player limit, port, PvP, host world), starts SkyrimTogetherServer.exe without a console
+// config\STServer.ini (name, password, player limit, port, PvP, host world, required mods), starts SkyrimTogetherServer.exe without a console
 // window and talks to it through its stdin/stdout: it lists who is connected every few seconds (/players) and kicks
-// the selected player (/kick). It shows the addresses friends join with and copies an invite to the clipboard.
+// the selected player (/kick) or bans them (/ban). It shows the addresses friends join with, the join code once the
+// router has opened the port, and copies an invite to the clipboard.
 //
 // Build (clang-cl / MSVC): cl /std:c++20 /O2 /EHsc SkyrimTogetherHost.cpp /link /SUBSYSTEM:WINDOWS
 //   user32.lib gdi32.lib shell32.lib comctl32.lib iphlpapi.lib ws2_32.lib winhttp.lib
@@ -41,7 +42,7 @@ constexpr UINT kPollMs = 3000;
 
 enum Control : int
 {
-    kName = 100, kPassword, kMaxPlayers, kPort, kPvp, kHostWorld, kStartStop, kPlayers, kKick, kStatus, kAddresses, kCopy, kLog
+    kName = 100, kPassword, kMaxPlayers, kPort, kPvp, kHostWorld, kRequireMods, kStartStop, kPlayers, kKick, kBan, kStatus, kAddresses, kCopy, kLog
 };
 
 struct Player
@@ -59,6 +60,8 @@ struct State
     HANDLE stdinWrite{};
     bool running = false;
     std::wstring publicIp;
+    // address:port the server's router reported (UPnP), for the join code; empty until then
+    std::wstring routerAddress;
     std::vector<Player> players;
     std::vector<Player> pendingPlayers; // collected from a /players answer
     bool readingPlayers = false;
@@ -71,6 +74,16 @@ std::wstring Widen(const std::string& acText)
     const int cLength = MultiByteToWideChar(CP_UTF8, 0, acText.data(), static_cast<int>(acText.size()), nullptr, 0);
     std::wstring out(cLength, L'\0');
     MultiByteToWideChar(CP_UTF8, 0, acText.data(), static_cast<int>(acText.size()), out.data(), cLength);
+    return out;
+}
+
+std::string Narrow(const std::wstring& acText)
+{
+    if (acText.empty())
+        return {};
+    const int cLength = WideCharToMultiByte(CP_UTF8, 0, acText.data(), static_cast<int>(acText.size()), nullptr, 0, nullptr, nullptr);
+    std::string out(cLength, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, acText.data(), static_cast<int>(acText.size()), out.data(), cLength, nullptr, nullptr);
     return out;
 }
 
@@ -110,6 +123,50 @@ bool ServerHasHostWorld()
     return cBytes.find("Gameplay:bHostWorld") != std::string::npos;
 }
 
+// The join code of an IPv4 address and port, as the game's Connect box takes it: Crockford base32 of the 4 address
+// bytes and 2 port bytes, ABCDE-FGHIJ (skyrim_ui/src/app/utils/join-code.ts in the game)
+std::wstring JoinCode(const std::wstring& acAddressPort)
+{
+    unsigned a = 0, b = 0, c = 0, d = 0, port = 0;
+    if (swscanf_s(acAddressPort.c_str(), L"%u.%u.%u.%u:%u", &a, &b, &c, &d, &port) != 5 || a > 255 || b > 255 || c > 255 || d > 255 || port == 0 || port > 65535)
+        return {};
+    uint64_t value = (static_cast<uint64_t>(a) << 40) | (static_cast<uint64_t>(b) << 32) | (static_cast<uint64_t>(c) << 24) | (static_cast<uint64_t>(d) << 16) | port;
+    constexpr wchar_t kAlphabet[] = L"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+    std::wstring code(10, L'0');
+    for (int i = 9; i >= 0; --i, value >>= 5)
+        code[i] = kAlphabet[value & 31];
+    return code.substr(0, 5) + L"-" + code.substr(5);
+}
+
+// The plugins enabled in Skyrim's newest Plugins.txt (Steam's or GOG's), for the server to require
+std::vector<std::wstring> EnabledPlugins()
+{
+    wchar_t local[MAX_PATH]{};
+    if (!GetEnvironmentVariableW(L"LOCALAPPDATA", local, MAX_PATH))
+        return {};
+    fs::path newest;
+    fs::file_time_type newestTime{};
+    for (const wchar_t* pFolder : {L"Skyrim Special Edition", L"Skyrim Special Edition GOG"})
+    {
+        std::error_code ec;
+        const fs::path cFile = fs::path(local) / pFolder / L"Plugins.txt";
+        const auto cTime = fs::last_write_time(cFile, ec);
+        if (!ec && (newest.empty() || cTime > newestTime))
+            newest = cFile, newestTime = cTime;
+    }
+
+    std::vector<std::wstring> plugins;
+    std::ifstream file(newest);
+    for (std::string line; std::getline(file, line);)
+    {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        if (line.size() > 1 && line[0] == '*')
+            plugins.push_back(Widen(line.substr(1)));
+    }
+    return plugins;
+}
+
 fs::path IniPath() { return g.serverDir / L"config" / L"STServer.ini"; }
 
 std::wstring IniRead(const wchar_t* apSection, const wchar_t* apKey, const wchar_t* apDefault)
@@ -134,7 +191,10 @@ void LoadSettings()
     SetWindowTextW(Item(kPort), IniRead(L"GameServer", L"uPort", L"10578").c_str());
     Button_SetCheck(Item(kPvp), IniRead(L"Gameplay", L"bEnablePvp", L"false") == L"true" ? BST_CHECKED : BST_UNCHECKED);
     Button_SetCheck(Item(kHostWorld), IniRead(L"Gameplay", L"bHostWorld", L"false") == L"true" ? BST_CHECKED : BST_UNCHECKED);
+    Button_SetCheck(Item(kRequireMods), IniRead(L"ModPolicy", L"bRequireMods", L"false") == L"true" ? BST_CHECKED : BST_UNCHECKED);
+    // Plus servers only, like host world
     ShowWindow(Item(kHostWorld), ServerHasHostWorld() ? SW_SHOW : SW_HIDE);
+    ShowWindow(Item(kRequireMods), ServerHasHostWorld() ? SW_SHOW : SW_HIDE);
 }
 
 bool SaveSettings()
@@ -152,7 +212,30 @@ bool SaveSettings()
     IniWrite(L"GameServer", L"uPort", std::to_wstring(cPortValue));
     IniWrite(L"Gameplay", L"bEnablePvp", Button_GetCheck(Item(kPvp)) == BST_CHECKED ? L"true" : L"false");
     if (ServerHasHostWorld())
+    {
         IniWrite(L"Gameplay", L"bHostWorld", Button_GetCheck(Item(kHostWorld)) == BST_CHECKED ? L"true" : L"false");
+
+        const bool cRequireMods = Button_GetCheck(Item(kRequireMods)) == BST_CHECKED;
+        if (cRequireMods)
+        {
+            const auto cPlugins = EnabledPlugins();
+            if (cPlugins.empty())
+            {
+                MessageBoxW(g.window, L"Skyrim's list of your mods (Plugins.txt) wasn't found or is empty. Untick \"Friends need my mods\" or start Skyrim once.", kTitle,
+                            MB_ICONWARNING);
+                return false;
+            }
+            std::ofstream list(g.serverDir / L"config" / L"required-mods.txt", std::ios::trunc);
+            for (const auto& cPlugin : cPlugins)
+                list << Narrow(cPlugin) << '\n';
+            if (!list)
+            {
+                MessageBoxW(g.window, L"Couldn't write the list of your mods for the server.", kTitle, MB_ICONERROR);
+                return false;
+            }
+        }
+        IniWrite(L"ModPolicy", L"bRequireMods", cRequireMods ? L"true" : L"false");
+    }
     return true;
 }
 
@@ -240,15 +323,18 @@ void UpdateAddresses()
         text += (i ? L", " : L"") + cLocal[i] + L":" + cPort;
     if (cLocal.empty())
         text += L"(no network)";
-    text += L"\r\nInternet: " + (g.publicIp.empty() ? std::wstring(L"looking up...") : g.publicIp + L":" + cPort) +
-            L"  (forward UDP port " + cPort + L" on your router)";
+    if (const std::wstring cCode = JoinCode(g.routerAddress); !cCode.empty())
+        text += L"\r\nInternet: join code " + cCode + L"  (" + g.routerAddress + L", the router opened the port)";
+    else
+        text += L"\r\nInternet: " + (g.publicIp.empty() ? std::wstring(L"looking up...") : g.publicIp + L":" + cPort) +
+                L"  (forward UDP port " + cPort + L" on your router)";
     SetWindowTextW(Item(kAddresses), text.c_str());
 }
 
 void UpdateUi()
 {
     SetWindowTextW(Item(kStartStop), g.running ? L"Stop server" : L"Start server");
-    for (int id : {kName, kPassword, kMaxPlayers, kPort, kPvp, kHostWorld})
+    for (int id : {kName, kPassword, kMaxPlayers, kPort, kPvp, kHostWorld, kRequireMods})
         EnableWindow(Item(id), !g.running);
     const std::wstring cStatus = g.running ? L"Running: " + std::to_wstring(g.players.size()) + L" of " + Text(kMaxPlayers) + L" players connected"
                                            : L"Stopped";
@@ -265,6 +351,7 @@ void UpdateUi()
     if (cSelected != LB_ERR && cSelected < static_cast<LRESULT>(g.players.size()))
         SendMessageW(list, LB_SETCURSEL, cSelected, 0);
     EnableWindow(Item(kKick), g.running && !g.players.empty());
+    EnableWindow(Item(kBan), g.running && !g.players.empty());
 }
 
 void ReaderThread(HANDLE aStdout, HWND aWindow)
@@ -380,6 +467,14 @@ void OnServerLine(const std::string& acLine)
         return;
     }
     g.readingPlayers = false;
+
+    // "[Host] Public address: 1.2.3.4:10578 (...)": the router opened the port, friends outside can join with a code
+    static const std::regex kPublic(R"(\[Host\] Public address: ([0-9.]+:[0-9]+))");
+    if (std::regex_search(acLine, match, kPublic))
+    {
+        g.routerAddress = Widen(match[1]);
+        UpdateAddresses();
+    }
     AppendLog(Widen(acLine));
 }
 
@@ -388,8 +483,13 @@ void CopyInvite()
     const std::wstring cPort = Text(kPort);
     const auto cLocal = LocalAddresses();
     std::wstring text = L"Skyrim Together: press F2 in game, then connect to ";
-    text += g.publicIp.empty() ? (cLocal.empty() ? L"?" : cLocal.front()) : g.publicIp;
-    text += L":" + cPort;
+    if (const std::wstring cCode = JoinCode(g.routerAddress); !cCode.empty())
+        text += L"join code " + cCode;
+    else
+    {
+        text += g.publicIp.empty() ? (cLocal.empty() ? L"?" : cLocal.front()) : g.publicIp;
+        text += L":" + cPort;
+    }
     if (const std::wstring cPassword = Text(kPassword); !cPassword.empty())
         text += L"  password: " + cPassword;
     if (!OpenClipboard(g.window))
@@ -428,6 +528,9 @@ void CreateControls()
     Add(L"BUTTON", L"Allow PvP", BS_AUTOCHECKBOX | WS_TABSTOP, kField, y, 110, 22, kPvp);
     // Friends take over your quests, cleared dungeons and dead NPCs, and start next to you
     Add(L"BUTTON", L"Friends join my world", BS_AUTOCHECKBOX | WS_TABSTOP, kField + 120, y, kFieldWidth - 120, 22, kHostWorld);
+    y += 26;
+    // The server refuses friends missing any of your mods, and tells them which
+    Add(L"BUTTON", L"Friends need my mods", BS_AUTOCHECKBOX | WS_TABSTOP, kField, y, kFieldWidth, 22, kRequireMods);
     y += 34;
     Add(L"BUTTON", L"Start server", BS_DEFPUSHBUTTON | WS_TABSTOP, kLeft, y, 150, 32, kStartStop);
     Add(L"BUTTON", L"Copy invite", WS_TABSTOP, kLeft + 160, y, 150, 32, kCopy);
@@ -440,6 +543,7 @@ void CreateControls()
     y += 22;
     Add(L"LISTBOX", L"", WS_BORDER | WS_VSCROLL | LBS_NOTIFY, kLeft, y, 360, 120, kPlayers);
     Add(L"BUTTON", L"Kick", WS_TABSTOP, kLeft + 370, y, 110, 32, kKick);
+    Add(L"BUTTON", L"Ban", WS_TABSTOP, kLeft + 370, y + 40, 110, 32, kBan);
     y += 128;
     Add(L"STATIC", L"Server log", 0, kLeft, y, 200, 20, -1);
     y += 22;
@@ -465,7 +569,9 @@ LRESULT CALLBACK WindowProc(HWND aWindow, UINT aMessage, WPARAM aWParam, LPARAM 
             g.running ? StopServer() : StartServer();
             return 0;
         case kKick:
+        case kBan:
         {
+            const bool cBan = LOWORD(aWParam) == kBan;
             const LRESULT cIndex = SendMessageW(Item(kPlayers), LB_GETCURSEL, 0, 0);
             if (cIndex == LB_ERR || cIndex >= static_cast<LRESULT>(g.players.size()))
             {
@@ -473,9 +579,10 @@ LRESULT CALLBACK WindowProc(HWND aWindow, UINT aMessage, WPARAM aWParam, LPARAM 
                 return 0;
             }
             const Player cPlayer = g.players[cIndex];
-            if (MessageBoxW(aWindow, (L"Kick " + cPlayer.name + L"?").c_str(), kTitle, MB_YESNO | MB_ICONQUESTION) == IDYES)
+            const std::wstring cQuestion = cBan ? L"Ban " + cPlayer.name + L"? Their address can't join this server again (config\\bans.txt)." : L"Kick " + cPlayer.name + L"?";
+            if (MessageBoxW(aWindow, cQuestion.c_str(), kTitle, MB_YESNO | MB_ICONQUESTION) == IDYES)
             {
-                SendCommand("/kick " + std::to_string(cPlayer.id));
+                SendCommand((cBan ? "/ban " : "/kick ") + std::to_string(cPlayer.id));
                 SendCommand("/players");
             }
             return 0;
@@ -557,7 +664,7 @@ int WINAPI wWinMain(HINSTANCE aInstance, HINSTANCE, PWSTR, int aShow)
     windowClass.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
     RegisterClassW(&windowClass);
 
-    RECT size{0, 0, 512, 700};
+    RECT size{0, 0, 512, 730};
     AdjustWindowRect(&size, WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME & ~WS_MAXIMIZEBOX, FALSE);
     CreateWindowW(windowClass.lpszClassName, kTitle, WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME & ~WS_MAXIMIZEBOX, CW_USEDEFAULT,
                   CW_USEDEFAULT, size.right - size.left, size.bottom - size.top, nullptr, nullptr, aInstance, nullptr);
