@@ -60,6 +60,21 @@ prefix.
   into `Data` (the stamp now includes the build's `VERSION`). `update rollback` swaps the two back. Both refuse while
   the game or its server runs. The app shows **Update to plus.N** when a check finds one. `ST_BUILDS` moves where the
   build folders are (default `~/Games`).
+- Ready-made shader cache: DXMT records what each pipeline was built from (`recipes_1.db`) and keeps the shaders it
+  translated (`shaders_<n>.db`) in `$(getconf DARWIN_USER_CACHE_DIR)dxmt/SkyrimSE.exe/` (`DXMT_CACHE_DIR` moves the
+  base); pipeline warming (`DXMT_WARM=all`, the `WARM` lines) builds from them at start, so only a fresh install
+  stutters while it compiles. `skyrim-together.sh shader-cache export [zip]` writes both (consistent sqlite copies,
+  about 7 MB zipped for 11,047 recipes) with a `MANIFEST.txt` (date, DXMT build, chip, macOS, recipe count) to
+  `~/Desktop/SkyrimTogether-shader-cache-<date>.zip`; `shader-cache import <zip>` checks the files and puts them in
+  place, keeping a cache that was there as `SkyrimSE.exe.before-import-<time>`. Both refuse while the game runs.
+  Tested: a cache exported here and imported into an empty cache folder warmed all 1,048 used pipelines (804 functions,
+  0 failed) in a fresh DXMT process.
+  Packaging it for a release (the lead): on the DXMT build the release uses, play a long session through the main
+  areas (and the mod's UI), quit, run `shader-cache export`, and attach the zip to the GitHub release; players run
+  `shader-cache import` once before their first start. Recipes are keyed by Metal target, so on another chip family
+  some may not apply (the `WARM` line counts them as `othertarget`); a cache from another DXMT build's shader
+  translator (another `shaders_<n>.db` number) isn't read. The recipes hold the DXBC of every shader the game ran,
+  including mods' shaders: check that sharing that is all right before publishing one.
 - `collect-logs.sh` gathers what's needed to report a problem into `~/Desktop/SkyrimTogether-logs-<date>.zip` and
   prints its path: the newest Wine/DXMT logs, the mod's logs (`tp_client.log`, `cef_debug.log`, server output), Crash
   Logger's `crash-*.log` reports, crash dumps (`crash_UTC_*.dmp`, written next to `SkyrimTogether.exe`), the load

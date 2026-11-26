@@ -5,6 +5,7 @@
 #   skyrim-together.sh check      report what is ready and what is missing; changes nothing
 #   skyrim-together.sh fix-input  give the running game its mouse and keyboard back (no restart)
 #   skyrim-together.sh update [check|install|rollback]   Plus build updates from GitHub (ST_VERSION=1.8.4-plus)
+#   skyrim-together.sh shader-cache export [zip] | import <zip>   DXMT's recorded pipelines, to skip first-run stutter
 set -u
 
 ST_VERSION=${ST_VERSION:-1.8.4}   # "1.8.4-plus" picks the Plus build (Desktop: Skyrim Together Plus.app)
@@ -368,6 +369,54 @@ update_rollback() {
   echo "OK   $(cat "$target/VERSION" 2>/dev/null || echo "the previous build") is back in $target; the game gets it at the next Play"
 }
 
+# DXMT's caches for the game (what pipeline warming, the WARM lines in its log, builds from): recipes_1.db, what each
+# pipeline was built from, and shaders_<n>.db, the shaders already translated to Metal (AIR). DXMT keeps them per
+# executable under $DXMT_CACHE_DIR (default: getconf DARWIN_USER_CACHE_DIR) + dxmt/; the game's are SkyrimSE.exe's.
+SHADER_CACHE="${DXMT_CACHE_DIR:-$(/usr/bin/getconf DARWIN_USER_CACHE_DIR)}"; SHADER_CACHE="${SHADER_CACHE%/}/dxmt/SkyrimSE.exe"
+
+shader_cache_export() {   # $1: the zip to write (default ~/Desktop/SkyrimTogether-shader-cache-<date>.zip)
+  local zip=${1:-$HOME/Desktop/SkyrimTogether-shader-cache-$(date +%Y-%m-%d).zip} stage db
+  [ -f "$SHADER_CACHE/recipes_1.db" ] || fail "no recorded pipelines in $SHADER_CACHE: play a while first"
+  /usr/bin/pgrep -f 'SkyrimTogether.exe --exePath|SkyrimSE.exe' >/dev/null && fail "the game is running: quit it first"
+  stage=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/st-shaders.XXXXXX") || fail "could not make a temporary folder"
+  # sqlite's .backup copies a consistent database, write-ahead log included. The copy leaves WAL mode: DXMT's warming
+  # opens the recipes read-only, which fails (SQLITE_CANTOPEN) on a WAL database without its -shm file
+  for db in "$SHADER_CACHE"/recipes_1.db "$SHADER_CACHE"/shaders_*.db; do
+    /usr/bin/sqlite3 "file:$db?mode=ro" ".backup '$stage/${db##*/}'" \
+      && [ "$(/usr/bin/sqlite3 "$stage/${db##*/}" 'pragma journal_mode=delete')" = delete ] \
+      || { /bin/rm -rf "$stage"; fail "could not copy $db"; }
+  done
+  { echo "DXMT pipeline cache for Skyrim SE (SkyrimSE.exe), $(date -u +%Y-%m-%dT%H:%MZ)"
+    echo "DXMT installed when exported: $(/usr/bin/grep -a -o -m1 'v0\.[0-9]*-[0-9]*-g[0-9a-f]*' "$SKYRIM_HOME/wine/lib/wine/x86_64-windows/d3d11.dll" | /usr/bin/head -1)"
+    echo "on: $(/usr/sbin/sysctl -n machdep.cpu.brand_string), macOS $(/usr/bin/sw_vers -productVersion)"
+    echo "recipes: $(/usr/bin/sqlite3 "$stage/recipes_1.db" 'select count(*) from cache_1')"
+  } > "$stage/MANIFEST.txt"
+  (cd "$stage" && /bin/rm -f "$zip" && /usr/bin/zip -q -9 "$zip" MANIFEST.txt ./*.db) || { /bin/rm -rf "$stage"; fail "could not write $zip"; }
+  /bin/rm -rf "$stage"
+  echo "$zip"
+}
+
+shader_cache_import() {   # $1: a zip from shader_cache_export. A cache already there is kept beside it, not deleted.
+  local zip=${1:?usage: skyrim-together.sh shader-cache import <zip>} stage db keep
+  [ -f "$zip" ] || fail "$zip doesn't exist"
+  /usr/bin/pgrep -f 'SkyrimTogether.exe --exePath|SkyrimSE.exe' >/dev/null && fail "the game is running: quit it first"
+  stage=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/st-shaders.XXXXXX") || fail "could not make a temporary folder"
+  /usr/bin/unzip -q "$zip" 'recipes_1.db' 'shaders_*.db' 'MANIFEST.txt' -d "$stage" 2>/dev/null \
+    && [ -f "$stage/recipes_1.db" ] && /bin/ls "$stage"/shaders_*.db >/dev/null 2>&1 \
+    || { /bin/rm -rf "$stage"; fail "$zip isn't a shader cache from skyrim-together.sh shader-cache export"; }
+  for db in "$stage"/*.db; do
+    [ "$(/usr/bin/sqlite3 "$db" 'pragma integrity_check')" = ok ] || { /bin/rm -rf "$stage"; fail "${db##*/} in $zip is damaged"; }
+  done
+  if [ -d "$SHADER_CACHE" ]; then
+    keep="$SHADER_CACHE.before-import-$(date +%Y%m%d-%H%M%S)"
+    /bin/mv "$SHADER_CACHE" "$keep" || { /bin/rm -rf "$stage"; fail "could not set $SHADER_CACHE aside"; }
+    echo "the cache that was there is now $keep"
+  fi
+  mkdir -p "$SHADER_CACHE" && /bin/mv "$stage"/*.db "$SHADER_CACHE/" || { /bin/rm -rf "$stage"; fail "could not fill $SHADER_CACHE"; }
+  echo "OK   imported $(/usr/bin/sed -n 1,3p "$stage/MANIFEST.txt" | /usr/bin/tr '\n' ' ')into $SHADER_CACHE"
+  /bin/rm -rf "$stage"
+}
+
 win_path() {   # C:\... inside the prefix's drive_c, D:\... through its dosdevices, Z:\... (the Mac's root) elsewhere
   case "$1" in
     "$WINEPREFIX/drive_c"/*) printf 'C:%s' "$(printf '%s' "${1#"$WINEPREFIX/drive_c"}" | tr '/' '\\')" ;;
@@ -382,6 +431,12 @@ case "${1:-play}" in
   check) check; status=$?; network_check; power_check; controller_check; exit $status ;;
   paths)   # for skyrim-play.sh and collect-logs.sh: where this script found the game, as shell assignments
     printf 'GAMEDIR=%q\nSTORE=%q\nMY_GAMES=%q\nLOAD_ORDER=%q\n' "$GAMEDIR" "$STORE" "$MY_GAMES" "${PLUGINS_TXT%/plugins.txt}" ;;
+  shader-cache)
+    case "${2:-}" in
+      export) shader_cache_export "${3:-}" ;;
+      import) shader_cache_import "${3:-}" ;;
+      *) echo "usage: $0 shader-cache export [zip] | import <zip>"; exit 2 ;;
+    esac ;;
   update)
     [ "$ST_VERSION" = 1.8.4-plus ] || fail "updates are for the Plus build: ST_VERSION=1.8.4-plus"
     case "${2:-check}" in
@@ -440,5 +495,5 @@ case "${1:-play}" in
     bring_to_front &
     disown
     echo "Skyrim Together started (Wine log: $LOGS/skyrim-together.log, mod logs: $DATA/SkyrimTogetherReborn/logs)" ;;
-  *) echo "usage: $0 [play|server|check|fix-input|update|paths]"; exit 2 ;;
+  *) echo "usage: $0 [play|server|check|fix-input|update|shader-cache|paths]"; exit 2 ;;
 esac
