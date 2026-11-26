@@ -64,7 +64,7 @@ final class Launcher {
         let warnings = checkItems.filter { $0.kind == .warning }.count
         status = switch (missing, warnings) {
         case (0, 0): Status(text: "\(edition.gameName) is ready to play.", tone: .success)
-        case (0, _): Status(text: "Ready to play. \(count(warnings, "warning")) about hosting.", tone: .success)
+        case (0, _): Status(text: "Ready to play, with \(count(warnings, "warning")) below.", tone: .success)
         default: Status(text: "\(count(missing, "thing")) to fix before \(edition.gameName) can start.", tone: .problem)
         }
     }
