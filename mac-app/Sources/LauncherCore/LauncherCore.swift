@@ -1,0 +1,83 @@
+import Foundation
+
+/// Which Skyrim Together build the scripts use (their ST_VERSION).
+public enum Edition: String, CaseIterable, Identifiable, Sendable {
+    case base = "1.8.4"
+    case plus = "1.8.4-plus"
+
+    public var id: String { rawValue }
+    public var title: String { self == .base ? "Base" : "Plus" }
+    public var gameName: String { self == .base ? "Skyrim Together" : "Skyrim Together Plus" }
+}
+
+/// The scripts in the repo's launch/ folder that the app runs.
+public enum LaunchScript: String, CaseIterable, Sendable {
+    case play = "skyrim-play.sh"            // `together` argument: Skyrim Together at the screen's size
+    case hostApp = "skyrim-host-app.sh"     // the Windows host window under Wine; runs until it's closed
+    case together = "skyrim-together.sh"    // `check`: one OK/MISS/WARN line per requirement
+    case collectLogs = "collect-logs.sh"    // prints the zip's path last
+
+    /// collect-logs.sh prints the zip's path as its last line; anything else there means it failed.
+    public static func collectedZip(in output: String) -> String? {
+        let last = output.split(whereSeparator: \.isNewline).last.map(String.init)
+        return last.flatMap { $0.hasPrefix("/") && $0.hasSuffix(".zip") ? $0 : nil }
+    }
+}
+
+/// A folder holding every LaunchScript.
+public struct ScriptFolder: Equatable, Sendable {
+    public enum LocateError: Error, Equatable {
+        case notConfigured
+        case missingScripts(String, [String])
+    }
+
+    public let path: String
+
+    public init(path: String) throws(LocateError) {
+        let missing = LaunchScript.allCases.map(\.rawValue).filter {
+            !FileManager.default.fileExists(atPath: (path as NSString).appendingPathComponent($0))
+        }
+        guard missing.isEmpty else { throw .missingScripts(path, missing) }
+        self.path = path
+    }
+
+    public func url(for script: LaunchScript) -> URL {
+        URL(filePath: path).appending(path: script.rawValue)
+    }
+}
+
+/// One line of the scripts' status output: "OK   Wine runtime", "MISS ...", "WARN ...", "FAIL ...".
+public struct CheckItem: Identifiable, Equatable, Sendable {
+    public enum Kind: Equatable, Sendable { case ok, missing, warning, failure, info }
+
+    public let id: Int
+    public let kind: Kind
+    public let text: String
+    /// A command the line asks the user to run in Terminal (the indented line under it), e.g. the firewall fix.
+    public var command: String?
+
+    private static let prefixes: [(String, Kind)] = [("OK ", .ok), ("MISS ", .missing), ("WARN ", .warning), ("FAIL ", .failure)]
+
+    public static func parse(_ output: String) -> [CheckItem] {
+        var items: [CheckItem] = []
+        for line in output.split(whereSeparator: \.isNewline).map(String.init) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { continue }
+            if line.first?.isWhitespace == true, !items.isEmpty {
+                items[items.count - 1].command = trimmed
+                continue
+            }
+            let (kind, rest) = prefixes.first { line.hasPrefix($0.0) }
+                .map { ($0.1, String(line.dropFirst($0.0.count))) } ?? (.info, line)
+            items.append(CheckItem(id: items.count, kind: kind, text: sentence(rest), command: nil))
+        }
+        return items
+    }
+
+    /// "the Mac firewall blocks Wine: ... In Terminal:" -> "The Mac firewall blocks Wine: ..." (the command follows)
+    private static func sentence(_ text: String) -> String {
+        var text = text.trimmingCharacters(in: .whitespaces)
+        if text.hasSuffix(" In Terminal:") { text.removeLast(" In Terminal:".count) }
+        return text.prefix(1).uppercased() + text.dropFirst()
+    }
+}

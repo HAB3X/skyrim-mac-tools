@@ -35,6 +35,20 @@ prefix (`~/Games/skyrim`).
 
 Paths are the ones used on the original machine (`~/Games/...`); adjust the variables at the top of each script.
 
+## mac-app/
+
+`Skyrim Together.app`, a one-window SwiftUI launcher (macOS 14+) over the scripts in `launch/`: **Play** (runs
+`skyrim-play.sh together`; the Base/Plus switch sets `ST_VERSION`), **Host a Game** (`skyrim-host-app.sh`), **Check
+Setup** (`skyrim-together.sh check`, shown as rows with icons and the firewall fix ready to copy; it also runs when the
+window opens and when the build changes), **Collect Logs** (`collect-logs.sh`, then shows the zip in Finder) and a
+status line. It never runs `sudo`: the firewall command is copied for you to paste into Terminal. Play is refused while
+`SkyrimTogether.exe` is already running.
+
+`mac-app/build.sh` runs the tests, builds `build/Skyrim Together.app` and prints its path. The app finds the scripts
+through the repo path that `build.sh` writes into its Info.plist (`STLaunchFolder`); if the repo moves it asks for the
+`launch` folder. Look: system controls only, one accent (a steel blue-grey, `Color.frost`), the Play button as the one
+prominent control, wording that says what each button does.
+
 ## play/
 
 `SkyrimTogetherHost.cpp`: the `Skyrim Together Host.exe` in each release zip, a window to run a co-op server:
