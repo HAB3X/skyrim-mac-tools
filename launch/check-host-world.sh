@@ -258,6 +258,12 @@ run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=f
 echo "== Plus server: a player joining mid-quest is offered the leader's progress"
 run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false' catchupleader catchupmember
 
+echo "== Plus server: two players looting the same body at once"
+run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false' corpseowner corpselooter
+
+echo "== Plus server: each player loots their own copy of a container"
+run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false\n[Gameplay]\nbPerPlayerLoot=true' ownlootfirst ownlootsecond
+
 # With SOAK_SECONDS set: two players stay connected and chat for that long (FakePlayers soak)
 if [[ -n "${SOAK_SECONDS:-}" ]]; then
     echo "== Plus server: soak for $SOAK_SECONDS seconds"
