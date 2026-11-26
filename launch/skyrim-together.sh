@@ -136,7 +136,7 @@ network_check() {   # things on this Mac that keep friends out; prints one WARN 
   if "$fw" --getglobalstate 2>/dev/null | /usr/bin/grep -q enabled \
      && ! "$fw" --listapps 2>/dev/null | /usr/bin/grep -A1 -F "$WINE " | /usr/bin/grep -q "Allow incoming"; then
     echo "WARN the Mac firewall blocks Wine: friends can't join a game you host. In Terminal:"
-    echo "       sudo $fw --add $WINE && sudo $fw --unblockapp $WINE"
+    printf '       sudo %q --add %q && sudo %q --unblockapp %q\n' "$fw" "$WINE" "$fw" "$WINE"
   fi
   return 0
 }

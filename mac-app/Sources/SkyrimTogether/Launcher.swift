@@ -6,7 +6,7 @@ import Observation
 @MainActor
 @Observable
 final class Launcher {
-    enum Activity: Equatable { case checking, starting, collecting, fixingInput, updating }
+    enum Activity: Equatable { case checking, starting, collecting, fixingInput, updating, firewall }
 
     struct Status: Equatable {
         enum Tone { case neutral, success, problem }
@@ -121,6 +121,44 @@ final class Launcher {
         }
         availableUpdate = nil
         status = Status(text: "Updated to \(update.tag). The game gets it the next time you press Play.", tone: .success)
+    }
+
+    /// Runs the check's firewall fix as administrator: macOS shows its own password dialog. With ST_DRY_RUN=1 in the
+    /// environment it only shows (and prints) the osascript command it would run.
+    func allowThroughFirewall(_ sudoCommand: String, _ edition: Edition) async {
+        guard activity == nil else { return }
+        let arguments: [String]
+        do {
+            arguments = try FirewallFix.osascriptArguments(fromSudo: sudoCommand)
+        } catch {
+            status = Status(text: "Not run: that isn't a firewall command (\(sudoCommand)).", tone: .problem)
+            return
+        }
+        if ProcessInfo.processInfo.environment["ST_DRY_RUN"] == "1" {
+            let line = (["/usr/bin/osascript"] + arguments.map { $0.contains(" ") ? "'\($0)'" : $0 }).joined(separator: " ")
+            print("dry run: \(line)")
+            status = Status(text: "Dry run: \(line)")
+            return
+        }
+        activity = .firewall
+        status = Status(text: "Asking macOS to let Wine through the firewall…")
+        let result: ScriptResult
+        do {
+            result = try await ScriptRunner.run(URL(filePath: "/usr/bin/osascript"), arguments: arguments)
+        } catch {
+            activity = nil
+            status = Status(text: "Couldn't run osascript: \(error.localizedDescription)", tone: .problem)
+            return
+        }
+        activity = nil
+        guard result.status == 0 else {
+            // osascript says "User canceled. (-128)" when the password dialog is cancelled
+            let reason = result.output.contains("(-128)") ? "the password dialog was cancelled"
+                : result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+            status = Status(text: "The firewall wasn't changed: \(reason).", tone: .problem)
+            return
+        }
+        await check(edition)
     }
 
     func host(_ edition: Edition) async {

@@ -108,3 +108,34 @@ public struct PlusUpdate: Equatable, Sendable {
         return nil
     }
 }
+
+/// The firewall fix that `skyrim-together.sh check` prints for Terminal ("sudo …socketfilterfw --add … && sudo
+/// …socketfilterfw --unblockapp …"), run instead through osascript's `do shell script … with administrator
+/// privileges`, so macOS asks for the user's own password in its own dialog. Only socketfilterfw commands are accepted:
+/// this runs as root.
+public enum FirewallFix {
+    public enum BuildError: Error, Equatable {
+        case notAFirewallCommand(String)
+    }
+
+    static let tool = "/usr/libexec/ApplicationFirewall/socketfilterfw"
+
+    /// The shell command without its `sudo`s: "socketfilterfw --add X && socketfilterfw --unblockapp X"
+    public static func shellCommand(fromSudo command: String) throws(BuildError) -> String {
+        let steps = command.components(separatedBy: " && ")
+        let unprivileged = steps.map { $0.trimmingCharacters(in: .whitespaces) }.map { step -> String? in
+            guard step.hasPrefix("sudo \(tool) "), !step.contains(";"), !step.contains("|"), !step.contains("`"),
+                  !step.contains("$(") else { return nil }
+            return String(step.dropFirst("sudo ".count))
+        }
+        guard !steps.isEmpty, unprivileged.allSatisfy({ $0 != nil }) else { throw .notAFirewallCommand(command) }
+        return unprivileged.compactMap { $0 }.joined(separator: " && ")
+    }
+
+    /// osascript's arguments: `-e`, then the AppleScript with the shell command as an escaped string literal
+    public static func osascriptArguments(fromSudo command: String) throws(BuildError) -> [String] {
+        let shell = try shellCommand(fromSudo: command)
+        let literal = shell.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        return ["-e", "do shell script \"\(literal)\" with administrator privileges"]
+    }
+}

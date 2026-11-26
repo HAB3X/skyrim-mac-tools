@@ -125,11 +125,17 @@ Our patches to the DXMT build the game uses (jdrly's gw2-on-mac fork at da80816)
 ## mac-app/
 
 `Skyrim Together.app`, a one-window SwiftUI launcher (macOS 14+) over the scripts in `launch/`: **Play** (runs
-`skyrim-play.sh together`; the Base/Plus switch sets `ST_VERSION`), **Host a Game** (`skyrim-host-app.sh`), **Fix Mouse & Keyboard** (`skyrim-together.sh fix-input`), **Check
-Setup** (`skyrim-together.sh check`, shown as rows with icons and the firewall fix ready to copy; it also runs when the
-window opens and when the build changes), **Collect Logs** (`collect-logs.sh`, then shows the zip in Finder) and a
-status line. It never runs `sudo`: the firewall command is copied for you to paste into Terminal. Play is refused while
-`SkyrimTogether.exe` is already running.
+`skyrim-play.sh together`; the Base/Plus switch sets `ST_VERSION`), **Host a Game** (`skyrim-host-app.sh`), **Check
+Setup** (`skyrim-together.sh check`, shown as rows with icons; it also runs when the window opens and when the build
+changes, and for Plus it also runs `update check` and offers **Update to plus.N**), **Fix Mouse & Keyboard**
+(`skyrim-together.sh fix-input`), **Collect Logs** (`collect-logs.sh`, then shows the zip in Finder) and a status line.
+Play is refused while `SkyrimTogether.exe` is already running.
+
+The firewall fix: the check's row has the Terminal command to copy, and **Allow Wine…**, which runs the same
+`socketfilterfw` commands through `osascript -e 'do shell script "…" with administrator privileges'`, so macOS asks for
+your own password in its dialog; then the check runs again. Only `socketfilterfw` commands are accepted
+(`FirewallFix` in `LauncherCore`, unit-tested, including an `osacompile` check of the AppleScript). Started with
+`ST_DRY_RUN=1` in its environment, the app shows and prints the `osascript` command instead of running it.
 
 `mac-app/build.sh` runs the tests, builds `build/Skyrim Together.app` and prints its path. The app finds the scripts
 through the repo path that `build.sh` writes into its Info.plist (`STLaunchFolder`); if the repo moves it asks for the

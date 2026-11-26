@@ -123,6 +123,7 @@ private struct SetupList: View {
 }
 
 private struct CheckRow: View {
+    @Environment(Launcher.self) private var launcher
     let item: CheckItem
     @State private var copied = false
 
@@ -147,16 +148,21 @@ private struct CheckRow: View {
                 .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 6))
                 .padding(.leading, 28)
                 HStack {
-                    Text("Paste it into Terminal; it asks for your Mac password.")
+                    Text("macOS asks for your Mac password.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Button(copied ? "Copied" : "Copy Command", systemImage: copied ? "checkmark" : "doc.on.doc") {
+                    Button(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(command, forType: .string)
                         copied = true
                     }
                     .accessibilityLabel("Copy the Terminal command")
+                    Button("Allow Wine…", systemImage: "lock.open") {
+                        Task { await launcher.allowThroughFirewall(command, launcher.checkedEdition ?? .plus) }
+                    }
+                    .disabled(launcher.activity != nil)
+                    .help("Runs this command as administrator: macOS asks for your password, then the check runs again")
                 }
                 .padding(.leading, 28)
             }

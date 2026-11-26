@@ -80,3 +80,37 @@ private let checkOutput = """
     #expect(PlusUpdate.parse("FAIL could not read the Skyrim Together releases from GitHub\n") == nil)
     #expect(PlusUpdate.parse("UPDATE v1.8.4-plus.4 lots none") == nil)
 }
+
+private let firewallCommand = "sudo /usr/libexec/ApplicationFirewall/socketfilterfw --add /Users/me/Games/skyrim/wine/bin/wine"
+    + " && sudo /usr/libexec/ApplicationFirewall/socketfilterfw --unblockapp /Users/me/Games/skyrim/wine/bin/wine"
+
+@Test func theFirewallFixRunsTheSameCommandsAsAdministratorWithoutSudo() throws {
+    let arguments = try FirewallFix.osascriptArguments(fromSudo: firewallCommand)
+    #expect(arguments == ["-e", "do shell script \"/usr/libexec/ApplicationFirewall/socketfilterfw --add /Users/me/Games/skyrim/wine/bin/wine"
+        + " && /usr/libexec/ApplicationFirewall/socketfilterfw --unblockapp /Users/me/Games/skyrim/wine/bin/wine\" with administrator privileges"])
+}
+
+// The script prints paths with spaces escaped by printf %q; the backslash must survive into the AppleScript string
+@Test func aPathWithASpaceStaysOneArgument() throws {
+    let command = "sudo /usr/libexec/ApplicationFirewall/socketfilterfw --add /Users/a\\ b/wine"
+    #expect(try FirewallFix.shellCommand(fromSudo: command) == "/usr/libexec/ApplicationFirewall/socketfilterfw --add /Users/a\\ b/wine")
+    #expect(try FirewallFix.osascriptArguments(fromSudo: command)[1]
+        == "do shell script \"/usr/libexec/ApplicationFirewall/socketfilterfw --add /Users/a\\\\ b/wine\" with administrator privileges")
+}
+
+@Test func onlySocketfilterfwCommandsAreRunAsAdministrator() {
+    for command in ["sudo rm -rf /", "sudo /usr/libexec/ApplicationFirewall/socketfilterfw --add x; rm -rf /",
+                    "sudo /usr/libexec/ApplicationFirewall/socketfilterfw --add $(whoami)", "/usr/libexec/ApplicationFirewall/socketfilterfw --add x",
+                    firewallCommand + " && sudo rm -rf /"] {
+        #expect(throws: FirewallFix.BuildError.notAFirewallCommand(command)) { try FirewallFix.shellCommand(fromSudo: command) }
+    }
+}
+
+// Dry run: AppleScript compiles the script (osacompile), which checks the quoting without running anything
+@Test func theAppleScriptCompiles() async throws {
+    let output = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).scpt")
+    defer { try? FileManager.default.removeItem(at: output) }
+    let script = try FirewallFix.osascriptArguments(fromSudo: firewallCommand.replacingOccurrences(of: "/me/", with: "/a\\ \"b/"))[1]
+    let result = try await ScriptRunner.run(URL(filePath: "/usr/bin/osacompile"), arguments: ["-o", output.path, "-e", script])
+    #expect(result.status == 0, "\(result.output)")
+}
