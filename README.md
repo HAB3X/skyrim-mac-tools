@@ -152,6 +152,8 @@ How the game's sound reaches the Mac (read from a `WINEDEBUG=+mmdevapi,+coreaudi
   Revert: `~/Documents/Mac-Wine-References/SkyrimMT-source/tools/wine-patches/<name>.sh revert`.
 - Measured with these patches, plain Skyrim at the main menu, 60 s idle then 60 s with all 10 cores busy: 0 dropouts
   in 11,269 callbacks of the game's stream. The logo video's stream had 3 short dropouts in its first seconds.
+  Skyrim Together at its main menu for ~6 minutes (`ST_AUDIO_DIAG=1`): 5 dropouts (28 ms of padding in all) in 32,604
+  callbacks; when in the session they fell isn't recorded. Not yet measured in the game world or with voice chat on.
 - Skyrim Together Plus voice chat uses its own streams (miniaudio, 48 kHz): playback on the Windows default device,
   and the microphone only once one is picked in Settings (`sInputDevice` in `config/STServer.ini`; empty = none).
 
