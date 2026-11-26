@@ -6,6 +6,7 @@
 # 2. The host kicking a player from the player list (FakePlayers kicker / kicked).
 # 3. The same server requiring the host's mods (ModPolicy:bRequireMods): refuses a player without them and names the
 #    missing one, lets one with them in (FakePlayers mods).
+# With SOAK_SECONDS set, also two players connected and chatting for that long (FakePlayers soak).
 # 4. With a v1.8.4 server folder (official, or our mac release's): this build joining it in its protocol and chatting
 #    (FakePlayers listen184 / talk184).
 # Prints one line per check; exits 0 when all pass.
@@ -71,6 +72,13 @@ if dir=$(start_server "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbL
     report "$dir/mods.log"
 else
     FAILED=1
+fi
+
+# With SOAK_SECONDS set: two players stay connected and chat for that long (FakePlayers soak)
+if [[ -n "${SOAK_SECONDS:-}" ]]; then
+    echo "== Plus server: soak for $SOAK_SECONDS seconds"
+    export WINEDEBUG SOAK_SECONDS
+    run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false' soak soak
 fi
 
 if [[ -n "$OFFICIAL_SERVER" ]]; then
