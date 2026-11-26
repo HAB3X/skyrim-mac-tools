@@ -11,7 +11,7 @@ content. The Mac side runs them on GOG Skyrim 1.6.1179 with the Skyrim Together 
   Mode) as it is.
 - **Don't** install SSE Engine Fixes for Skyrim Together: players and NPCs turn invisible.
 
-## The 45 files
+## The 44 files
 Download each file from its link (Nexus Mods, "Manual download") and install it with Vortex, Mod Organizer 2 or by
 hand into `Data`. On Steam 1.7.x, take the newest version of the SKSE plugins (Actor Limit Fix, SkyPatcher, MCM
 Helper, powerofthree's Tweaks, Simple Dual Sheath, Crash Logger, Animation Queue Fix, Native EditorID Fix, Crafting
@@ -58,12 +58,11 @@ Categories) if the listed file doesn't support your version; everything else mus
 | 37 | Sentinel - An Equipment Overhaul | [Sentinel - An Equipment Overhaul](https://www.nexusmods.com/skyrimspecialedition/mods/100985?tab=files&file_id=600826) | 139 | Main Modules: only **Core**, **Priests and Acolytes**, **City Guards**. Disable AE Quests: none. Patches: **More Craftable Equipment**. Later pages: defaults. |
 | 38 | Sentinel - An Equipment Overhaul | [Sentinel - Required Resources](https://www.nexusmods.com/skyrimspecialedition/mods/100985?tab=files&file_id=600824) | 2333 | none, just install |
 | 39 | Simple Dual Sheath | [Simple Dual Sheath for 1.6.629 and newer](https://www.nexusmods.com/skyrimspecialedition/mods/50049?tab=files&file_id=450438) | <1 | none, just install |
-| 40 | Simple Dual Sheath | [XPMSSE Left Hand Sheath Rotation Fix](https://www.nexusmods.com/skyrimspecialedition/mods/50049?tab=files&file_id=204058) | <1 | none, just install |
-| 41 | SkyPatcher | [SkyPatcher - AE](https://www.nexusmods.com/skyrimspecialedition/mods/106659?tab=files&file_id=738371) | 10 | none, just install |
-| 42 | SkyUI | [SkyUI](https://www.nexusmods.com/skyrimspecialedition/mods/12604?tab=files&file_id=739315) | 3 | none, just install |
-| 43 | The Great Cities - Minor Cities and Towns SSE Edition | [The Great Cities 2.01](https://www.nexusmods.com/skyrimspecialedition/mods/20272?tab=files&file_id=83508) | 3 | none, just install |
-| 44 | The Great City of Solitude SSE | [The Great City of Solitude 2.02](https://www.nexusmods.com/skyrimspecialedition/mods/22243?tab=files&file_id=123645) | 4 | none, just install |
-| 45 | Vanilla hair remake | [Vanilla hair remake](https://www.nexusmods.com/skyrimspecialedition/mods/63979?tab=files&file_id=501460) | 8 | none, just install |
+| 40 | SkyPatcher | [SkyPatcher - AE](https://www.nexusmods.com/skyrimspecialedition/mods/106659?tab=files&file_id=738371) | 10 | none, just install |
+| 41 | SkyUI | [SkyUI](https://www.nexusmods.com/skyrimspecialedition/mods/12604?tab=files&file_id=739315) | 3 | none, just install |
+| 42 | The Great Cities - Minor Cities and Towns SSE Edition | [The Great Cities 2.01](https://www.nexusmods.com/skyrimspecialedition/mods/20272?tab=files&file_id=83508) | 3 | none, just install |
+| 43 | The Great City of Solitude SSE | [The Great City of Solitude 2.02](https://www.nexusmods.com/skyrimspecialedition/mods/22243?tab=files&file_id=123645) | 4 | none, just install |
+| 44 | Vanilla hair remake | [Vanilla hair remake](https://www.nexusmods.com/skyrimspecialedition/mods/63979?tab=files&file_id=501460) | 8 | none, just install |
 
 ## Load order
 Turn these on in this order (`load-order.txt`; by hand that's `plugins.txt` with a `*` before each name). The base game
@@ -115,3 +114,5 @@ SkyrimTogetherQuestPatches.esp
 - Keizaal's own content (Keizaal Online Patches and its server files): made for the Keizaal roleplay server.
 - Nemesis: none of these mods need it.
 - Skyrim Souls RE (unpaused menus): risky with co-op sync.
+- Simple Dual Sheath's "XPMSSE Left Hand Sheath Rotation Fix": it replaces the character skeletons with XPMSSE ones,
+  and without XPMSSE some NPCs turn invisible in Skyrim Together. Simple Dual Sheath itself is in.

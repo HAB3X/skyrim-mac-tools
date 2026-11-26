@@ -31,6 +31,10 @@ Paths are the ones used on the original machine (`~/Games/...`); adjust the vari
 
 ## play/
 
+`SkyrimTogetherHost.cpp`: the `Skyrim Together Host.exe` in each release zip, a window to run a co-op server:
+name, password, player limit, port, PvP, the addresses to share, who is connected and a Kick button (it drives
+`SkyrimTogetherServer.exe` through its stdin). On a Mac, `launch/skyrim-host-app.sh` runs it under Wine.
+
 `PlaySkyrimTogether.cpp`: the `Play Skyrim Together.exe` in each release zip. It finds Skyrim (Steam or GOG), installs
 the release folder matching the game version into `Data`, enables Skyrim Together's plugins and starts it. Build with
 `cross-build/` (clang-cl) or MSVC; the build line is at the top of the file.
