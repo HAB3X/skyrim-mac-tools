@@ -33,6 +33,45 @@ prefix (`~/Games/skyrim`).
   is set aside (`EngineFixes.dll.off`) for Skyrim Together, where it makes other players and NPCs invisible, and put
   back for plain Skyrim.
 
+### Performance
+
+What the logs show (M4, 16 GB, 1800×1169 borderless on a 120 Hz screen, DXMT fork da80816 with the settings in
+`skyrim-together.sh`), measured 2026-11-26:
+
+- **In focus the game holds 60 fps.** The last session's DXMT log (`SkyrimSE_d3d11.log`, 48 two-second intervals,
+  5,673 frames): mean 58.9 fps, 34 intervals at 60; the 99th-percentile frame is 16.7 ms in the median interval
+  and over 33 ms in 7 of 48. The GPU works about 11 ms of each 16.7 ms frame (`gpuspan` median 11.3 ms, max 15.5), so there is headroom but not a lot.
+- **Shader warming works.** All 1,048 recorded pipelines were warmed (`WARM ... used=1048/1048`); 11 pipelines were
+  built while playing, none failed. Compiling is not a cause of the hitches.
+- **Hitches come from outside DXMT.** Of the 17 frames over 50 ms in that session (51–340 ms), 13 spent under 5 ms
+  in DXMT: the time went to the game, the mod or Wine. Three were DXMT waiting for a drawable (at startup, and one
+  pair of 97 and 106 ms), and one split 45 ms in DXMT (25 ms creating resources) and 96 ms outside.
+- **Many sessions sat at exactly 30 fps.** Across the mod's `[Perf]` lines (`tp_client.log`, 191 ten-second intervals
+  in 11 sessions since 2026-11-19), 88 intervals read exactly 30 fps and 32 read 60, with little in between. Two
+  sessions (2026-11-21 09:49 and 2026-11-26 14:54 UTC, 6–7 minutes each) read exactly 30 in 23 of 38 and 28 of 34
+  intervals and never dropped below it, while
+  the mod's own updates took about 0.1 ms a frame. The only 30 fps cap configured is DXMT's background throttle
+  (`DXMT_BG_FPS=30`, `DXMT_BG_POLICY=focus`), which also counts "no foreground window" as background, and Wine opens
+  the game without making it the active app (the reason for `bring_to_front`). That fits, but it isn't proven: DXMT's
+  log is overwritten on each start, so none survives from those sessions.
+- **One mod cost stands out.** With about 30 actors in the 2026-11-26 15:01 session, the mod's "Game: actor updates"
+  averaged 3.4 ms a frame and rose to 11–19 ms in its worst intervals, where the game fell to 27–28 fps. In the
+  other sessions it averages 0.4–1.7 ms.
+
+Recommendations (no defaults changed, because none of the above shows a setting that is wrong while the game has
+focus):
+
+1. When the game is at 30 fps, click its window or Cmd-Tab to it. If it goes back to 60, it was the background
+   throttle. To play with no throttle: `DXMT_BG_FPS=60 skyrim-play.sh together` (costs power while the game is
+   behind other windows). If clicking doesn't help, it is something else; keep that session's logs
+   (`collect-logs.sh`) before starting the game again.
+2. Keep the previous session's DXMT log before a new start (for example, move `SkyrimSE_d3d11.log` to
+   `SkyrimSE_d3d11.prev.log`), so a slow session can still be read afterwards.
+3. Look at the mod's actor-update hook when many players or NPCs are synced: it is the only measured cost that
+   grows enough to drop frames.
+4. Leave the frame cap as it is: DXMT's `preferredMaxFrameRate=60` plus SSE Display Tweaks' `FramerateLimit=60`
+   with VSync gives the flat 16.7 ms pacing above.
+
 Paths are the ones used on the original machine (`~/Games/...`); adjust the variables at the top of each script.
 
 ## mac-app/
