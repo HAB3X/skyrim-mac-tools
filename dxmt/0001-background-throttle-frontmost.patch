@@ -1,0 +1,156 @@
+From f068fc2e348c96e25b9458a22429f412099d859c Mon Sep 17 00:00:00 2001
+From: HAB3X <marcus.chandler@griffithuni.edu.au>
+Date: Thu, 26 Nov 2026 18:18:10 +1000
+Subject: [PATCH] Background throttle: the active app's on-screen window counts
+ as foreground
+
+Wine's foreground window isn't macOS's. Once Wine has no foreground window (or another
+process's), the focus policy throttled the game to DXMT_BG_FPS even while it was the active app
+on macOS, and reactivating the app didn't always bring Wine's foreground back: Skyrim Together
+ran whole sessions at exactly 30 fps. The focus policy now also reads whether the app is active
+with the window on screen (WMTViewVisibilityFrontmost, refreshed on the main thread like the
+occlusion policy's flags); a hidden, minimized or Cmd+Tabbed-away game still throttles.
+---
+ docs/gw2/README.md                  |  3 ++-
+ src/d3d11/d3d11_swapchain.cpp       | 41 ++++++++++++++++++++++++-----
+ src/winemetal/unix/winemetal_unix.c |  3 +++
+ src/winemetal/winemetal.h           |  7 ++---
+ 4 files changed, 43 insertions(+), 11 deletions(-)
+
+diff --git a/docs/gw2/README.md b/docs/gw2/README.md
+index 616b94f49..7c8da404c 100644
+--- a/docs/gw2/README.md
++++ b/docs/gw2/README.md
+@@ -29,7 +29,7 @@ The Status column says where a switch stands, with the issue or note that says s
+ | `DXMT_THREAD_PRIORITY` | `critical` | (#151) The priority DXMT's `dxmt-encode-thread` and `dxmt-finish-thread` set at their start. `critical`: `THREAD_PRIORITY_TIME_CRITICAL`, as upstream. `normal`: `THREAD_PRIORITY_NORMAL`, timeshare and below GW2's game thread. `utility`: `normal`, then Mach base priority 20 (bridge call `WMTSetThreadBasePrioritySelf`), which macOS keeps on the P cores. Read at each queue's creation; anything else is `critical`, with a warning. The startup line shows `utility:ok`, `utility:failed` (a thread didn't get base priority 20) or `utility:pending` (no thread has tried yet); see [Queue thread priority](#queue-thread-priority) | unset or `critical`: `THREAD_PRIORITY_TIME_CRITICAL` | `experiment`: `critical` is upstream's; the other values have no result yet (#151) |
+ | `DXMT_COMPILE_PRIORITY` | `critical` | (#152) The priority each compile worker sets at its start (the workers that build shader variants and pipelines, 2 at first and up to 2 × CPUs). The same values and mechanism as `DXMT_THREAD_PRIORITY`: `critical` (`THREAD_PRIORITY_TIME_CRITICAL`, as upstream), `normal` (`THREAD_PRIORITY_NORMAL`, below GW2's game thread) or `utility` (`normal`, then base priority 20). Read at each device's creation; anything else is `critical`, with a warning. The startup line shows `utility:ok`, `utility:failed` or `utility:pending` as for `DXMT_THREAD_PRIORITY`; see [Compile worker priority](#compile-worker-priority) | unset or `critical`: `THREAD_PRIORITY_TIME_CRITICAL` | `experiment`: `critical` is upstream's; the other values have no result yet (#152) |
+ | `DXMT_DEPTH_PFV` | off | `=1` keeps `PixelFormatView` (no lossless compression) on typeless single-plane depth targets (`R32_TYPELESS`, `R16_TYPELESS` bound as depth), the part `DXMT_STENCIL_PFV` doesn't cover (#2) | unset or not `1`: my fork's behaviour since `9688571`, not upstream's. These targets get no `PixelFormatView`, so Metal compresses them losslessly, and `=1` is upstream's behaviour, as for `DXMT_STENCIL_PFV` above | `default`: off is my fork's behaviour (#2), `=1` is upstream's |
+-| `DXMT_BG_POLICY` | `focus` | What "in the background" means for `DXMT_BG_FPS`. `focus`: another process's window is in the foreground, or none is (pid 0, counted as another process). `occlusion`: GW2's window isn't visible on screen (`NSWindow.occlusionState` without `Visible`, read through the bridge at most 10 times a second) or is miniaturized (`DXMT_BG_FPS_MINIMIZED`), whoever has the focus, as d9mt does. A minimized window (`IsIconic`) throttles under both | `focus` | `default` |
++| `DXMT_BG_POLICY` | `focus` | What "in the background" means for `DXMT_BG_FPS`. `focus`: another process's window is in the foreground, or none is (pid 0, counted as another process), unless the game's app is the active app on macOS and its window is on screen (Wine's foreground isn't macOS's: winemac starts a program without activating it, and reactivating the app doesn't always bring Wine's foreground back). `occlusion`: GW2's window isn't visible on screen (`NSWindow.occlusionState` without `Visible`, read through the bridge at most 10 times a second) or is miniaturized (`DXMT_BG_FPS_MINIMIZED`), whoever has the focus, as d9mt does. A minimized window (`IsIconic`) throttles under both | `focus` | `default` |
+ | `DXMT_PSO_BLEND_HASH` | on | The pipeline key's hash includes a fingerprint of the blend state (exactly what the key's equality compares: disabled fields left out, one render target without independent blend, else one per color attachment) and `RasterizationEnabled`; computed once per blend state object. The equality rejects keys whose fingerprints differ without reading both blend descriptions | `=0`: the upstream hash (no blend, no `RasterizationEnabled`) and equality | `default` |
+ | `DXMT_PSO_MRU` | on | Each context keeps its last 4 plain (VS/PS) pipelines with their keys and checks them, with the cache's own equality, before the device's pipeline cache (its lock, hash and bucket) | `=0`: every pipeline change looks up the cache | `default` |
+ | `DXMT_PSO_TOPOLOGY_KEEP` | on | `IASetPrimitiveTopology` keeps the current pipeline when the new topology has the same class (point, line, triangle) and the pipeline is a plain one (no GS, HS or DS bound); adjacency and patch lists always invalidate | `=0`: every topology change invalidates the pipeline | `default` |
+@@ -151,6 +151,7 @@ Sections: a feature registers a function with `gw2::SectionRegistrar` (`src/dxmt
+ | `Presenter: freed, N alive` | (#185) `DXMT_PRESENTER_FREE=1`: a presenter was deleted (its swap chain was released and its chunks retired); `N` of this process's presenters are still alive, one per swap chain not yet released |
+ | `Present: background throttle policy P (DXMT_BG_POLICY), N fps in the background (DXMT_BG_FPS), M fps minimized (DXMT_BG_FPS_MINIMIZED)` | Once, at the first Present (a warning before it if `DXMT_BG_POLICY` is neither `focus` nor `occlusion`) |
+ | `Present: <reason>, throttling to N fps (policy …, <details>)` | The background throttle engages, or its rate or reason changes. Reasons: `window minimized` (details `IsIconic`); `another process in the foreground` (focus: `foreground window H pid N, ours M`, or `no foreground window (pid 0), counted as another process; ours M`); `window not visible (occluded)` and `window miniaturized` (occlusion: `visibility 0x…: visible= miniaturized= activeSpace=`) |
++| `Present: the window is in front on macOS while Wine reports <foreground window H pid N \| no foreground window> (ours M): counted as foreground` | Focus policy: Wine names another (or no) foreground window but the game is the active app on macOS with its window on screen, so it isn't throttled. Logged when that starts |
+ | `Present: presenting normally again (was: …)` | It lets go |
+ | `PixelFormatView (no lossless compression): format F bind B WxH` | Once per format and bind flags of a render or depth target that keeps the flag |
+ | `RenderThreadPriority: thread T QoS OLD -> NEW (pthread_set_qos_class_self_np user-interactive: ok\|error E, left unchanged)` | `DXMT_RENDER_THREAD_PRIORITY` 1 or 3, once per presenting thread: its Win32 thread id, `qos_class_self()` before and after, and the call's result (an errno) |
+diff --git a/src/d3d11/d3d11_swapchain.cpp b/src/d3d11/d3d11_swapchain.cpp
+index 46419c362..cf3b74320 100644
+--- a/src/d3d11/d3d11_swapchain.cpp
++++ b/src/d3d11/d3d11_swapchain.cpp
+@@ -1389,10 +1389,21 @@ public:
+   int64_t bg_vis_at_ = 0;      // when bg_vis_ was read (gw2::nowNs); 0: never
+   int64_t bg_last_ns_ = 0;     // the previous Present through the throttle (for BG)
+   bool bg_last_engaged_ = false;
++  bool bg_front_override_ = false; // focus policy: Wine names another (or no) foreground window, macOS has us in front
+   clock::time_point bg_deadline_{};
+ 
+   static constexpr int64_t kBgVisibilityPollNs = 100'000'000; // read the cached state at most 10x/s
+ 
++  // WMTViewVisibility of the swapchain's window, re-read at most every kBgVisibilityPollNs
++  uint64_t ViewVisibility() {
++    int64_t t = gw2::nowNs();
++    if (!bg_vis_at_ || t - bg_vis_at_ >= kBgVisibilityPollNs) {
++      bg_vis_ = WMT::MetalViewVisibility(native_view_);
++      bg_vis_at_ = t;
++    }
++    return bg_vis_;
++  }
++
+   void ThrottleBackground() {
+     const auto &config = bgConfig();
+     uint32_t fps = 0;
+@@ -1401,11 +1412,7 @@ public:
+       fps = config.fps_minimized;
+       code = BgReason::Minimized;
+     } else if (config.policy == BgPolicy::Occlusion) {
+-      int64_t t = gw2::nowNs();
+-      if (!bg_vis_at_ || t - bg_vis_at_ >= kBgVisibilityPollNs) {
+-        bg_vis_ = WMT::MetalViewVisibility(native_view_);
+-        bg_vis_at_ = t;
+-      }
++      ViewVisibility();
+       // Unknown (before the first main-thread refresh) or not in a window: treated as visible.
+       if ((bg_vis_ & WMTViewVisibilityKnown) && !(bg_vis_ & WMTViewVisibilityNoWindow)) {
+         if (bg_vis_ & WMTViewVisibilityMiniaturized) {
+@@ -1420,13 +1427,33 @@ public:
+       // Another process in front (Cmd+Tab under winemac), not "hWnd isn't the foreground window":
+       // GW2's swapchain window isn't the one Wine reports as foreground while the game is in
+       // front, which throttled the whole session to 30 fps (a6047fe).
++      //
++      // Wine's foreground window isn't macOS's: winemac starts a program without activating it,
++      // and once Wine has no foreground window (or another process's), activating the app again
++      // doesn't always bring it back: Skyrim Together ran whole sessions at exactly 30 fps while
++      // it was the app being played. So the window being on screen in the active app counts as
++      // foreground too; a hidden, minimized or Cmd+Tabbed-away game isn't.
+       HWND fg = GetForegroundWindow();
+       DWORD fg_pid = 0;
+       if (fg)
+         GetWindowThreadProcessId(fg, &fg_pid);
++      bool front_override = false;
+       if (fg_pid != GetCurrentProcessId()) {
+-        fps = config.fps;
+-        code = fg ? BgReason::Foreground : BgReason::NoForeground;
++        uint64_t vis = ViewVisibility();
++        front_override = (vis & WMTViewVisibilityKnown) && (vis & WMTViewVisibilityFrontmost);
++        if (!front_override) {
++          fps = config.fps;
++          code = fg ? BgReason::Foreground : BgReason::NoForeground;
++        }
++      }
++      if (front_override != bg_front_override_) {
++        if (front_override)
++          Logger::info(str::format(
++              "Present: the window is in front on macOS while Wine reports ",
++              fg ? str::format("foreground window ", (void *)fg, " pid ", fg_pid) : std::string("no foreground window"),
++              " (ours ", GetCurrentProcessId(), "): counted as foreground"
++          ));
++        bg_front_override_ = front_override;
+       }
+       bg_fg_ = fg;
+       bg_fg_pid_ = fg_pid;
+diff --git a/src/winemetal/unix/winemetal_unix.c b/src/winemetal/unix/winemetal_unix.c
+index f678499d8..091169f1f 100644
+--- a/src/winemetal/unix/winemetal_unix.c
++++ b/src/winemetal/unix/winemetal_unix.c
+@@ -1888,6 +1888,9 @@ _MetalView_visibility(void *obj) {
+           flags |= WMTViewVisibilityMiniaturized;
+         if (win.isOnActiveSpace)
+           flags |= WMTViewVisibilityOnActiveSpace;
++        /* key or not: Wine resigns key when its own focus goes, and the game is still the app in use */
++        if (NSApp.isActive && (win.occlusionState & NSWindowOcclusionStateVisible))
++          flags |= WMTViewVisibilityFrontmost;
+       } else {
+         flags |= WMTViewVisibilityNoWindow;
+       }
+diff --git a/src/winemetal/winemetal.h b/src/winemetal/winemetal.h
+index 4c852adfa..c8a47ca4e 100644
+--- a/src/winemetal/winemetal.h
++++ b/src/winemetal/winemetal.h
+@@ -1832,15 +1832,16 @@ WINEMETAL_API obj_handle_t CreateMetalViewFromHWND(intptr_t hwnd, obj_handle_t d
+ WINEMETAL_API void ReleaseMetalView(obj_handle_t view);
+ 
+ /* gw2 (#1): the visibility of the window that holds a view from CreateMetalViewFromHWND, for the
+-   background throttle's occlusion policy. The unix side caches it per view and refreshes it on the
+-   main thread without waiting, so a call never blocks and returns the state of the previous
+-   refresh: 0 (no WMTViewVisibilityKnown) until the first one has run. */
++   background throttle (the occlusion policy, and the focus policy's frontmost app). The unix side
++   caches it per view and refreshes it on the main thread without waiting, so a call never blocks
++   and returns the state of the previous refresh: 0 (no WMTViewVisibilityKnown) until the first one has run. */
+ enum WMTViewVisibility {
+   WMTViewVisibilityKnown = 1,
+   WMTViewVisibilityVisible = 2,       /* occlusionState has NSWindowOcclusionStateVisible */
+   WMTViewVisibilityMiniaturized = 4,  /* isMiniaturized */
+   WMTViewVisibilityOnActiveSpace = 8, /* isOnActiveSpace */
+   WMTViewVisibilityNoWindow = 16,     /* the view isn't in a window */
++  WMTViewVisibilityFrontmost = 32,    /* NSApp isActive and the window is on screen (occlusionState visible) */
+ };
+ 
+ WINEMETAL_API uint64_t MetalView_visibility(obj_handle_t view);
+-- 
+2.56.0
+

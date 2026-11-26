@@ -5,9 +5,9 @@
 # Used by ~/Desktop/Skyrim.app; "skyrim-play.sh together" starts Skyrim Together instead (~/Desktop/Skyrim Together.app).
 set -u
 export WINEMSYNC=1   # msync for every Wine process of the prefix (see skyrim-together.sh); SkyrimMT records it per session
-# DXMT (Metal renderer) = jdrly's gw2-on-mac fork build (~/Games/dxmt-builds/INSTALLED.txt): pre-build the pipelines
+# DXMT (Metal renderer) = jdrly's gw2-on-mac fork with dxmt/ patches (~/Games/dxmt-builds/INSTALLED.txt): pre-build the pipelines
 # recorded on earlier runs, log hitches/stats to ~/Games/skyrim/logs, and let Metal pace 60 fps (VSync is broken on
-# ProMotion screens, DXMT issue #26). The previous DXMT is in ~/Games/skyrim/backups/dxmt-9839e55-skyrimmt.
+# ProMotion screens, DXMT issue #26). Earlier builds: ~/Games/skyrim/backups.
 # Rosetta reports AVX/AVX2 to the game and SKSE plugins (macOS 15+), as CrossOver does by default
 export ROSETTA_ADVERTISE_AVX=1
 export DXMT_WARM="${DXMT_WARM:-all}"

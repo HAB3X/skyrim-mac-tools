@@ -14,16 +14,17 @@ export WINEDEBUG="${WINEDEBUG:--all}"
 # msync: Wine synchronisation through Mach ports instead of wineserver round trips (much less stutter). Every Wine
 # process of this prefix must agree (game, server, Chromium UI, SkyrimMT launches via skyrim-play.sh), so both scripts set it.
 export WINEMSYNC=1
-# DXMT (Metal renderer) = jdrly's gw2-on-mac fork build (~/Games/dxmt-builds/INSTALLED.txt): pre-build the pipelines
+# DXMT (Metal renderer) = jdrly's gw2-on-mac fork with dxmt/ patches (~/Games/dxmt-builds/INSTALLED.txt): pre-build the pipelines
 # recorded on earlier runs, log hitches/stats to ~/Games/skyrim/logs, and let Metal pace 60 fps (VSync is broken on
-# ProMotion screens, DXMT issue #26). The previous DXMT is in ~/Games/skyrim/backups/dxmt-9839e55-skyrimmt.
+# ProMotion screens, DXMT issue #26). Earlier builds: ~/Games/skyrim/backups.
 # Rosetta reports AVX/AVX2 to the game and SKSE plugins (macOS 15+), as CrossOver does by default
 export ROSETTA_ADVERTISE_AVX=1
 export DXMT_WARM="${DXMT_WARM:-all}"
 export DXMT_LOG_PATH="${DXMT_LOG_PATH:-Z:$HOME/Games/skyrim/logs}"
-# DXMT caps an unfocused game at 30 fps, and also treats the game as unfocused when Wine reports no foreground
-# window: 88 of 191 logged [Perf] intervals sat at exactly 30 fps in play. Keep 60 unless it's minimized
-# (DXMT_BG_FPS_MINIMIZED keeps its own default for that).
+# DXMT caps an unfocused game at 30 fps, and da80816 treated the game as unfocused whenever Wine reported no
+# foreground window: 88 of 191 logged [Perf] intervals sat at exactly 30 fps in play. The installed build (dxmt/)
+# counts the active app's on-screen window as foreground; containment until a game session confirms that: keep 60
+# unless it's minimized (DXMT_BG_FPS_MINIMIZED keeps its own default for that).
 export DXMT_BG_FPS="${DXMT_BG_FPS:-60}"
 # DXMT rewrites its log on every start; keep the previous session's, to see why a session ran slow
 for log in "$HOME/Games/skyrim/logs"/{SkyrimSE,TPProcess}_d3d11.log; do

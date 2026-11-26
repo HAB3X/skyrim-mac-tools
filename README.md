@@ -51,30 +51,56 @@ What the logs show (M4, 16 GB, 1800×1169 borderless on a 120 Hz screen, DXMT fo
   sessions (2026-11-21 09:49 and 2026-11-26 14:54 UTC, 6–7 minutes each) read exactly 30 in 23 of 38 and 28 of 34
   intervals and never dropped below it, while
   the mod's own updates took about 0.1 ms a frame. The only 30 fps cap configured is DXMT's background throttle
-  (`DXMT_BG_FPS=30`, `DXMT_BG_POLICY=focus`), which also counts "no foreground window" as background, and Wine opens
-  the game without making it the active app (the reason for `bring_to_front`). That fits, but it isn't proven: DXMT's
-  log is overwritten on each start, so none survives from those sessions.
+  (`DXMT_BG_FPS=30`, `DXMT_BG_POLICY=focus`), which counts "no foreground window" (or another process's) as
+  background, going by Wine's foreground window only. Wine's foreground isn't macOS's: in a test window (`dxmt/focus-test`)
+  that loses Wine's foreground window while it is the active Mac app, DXMT da80816 held it at exactly 30 fps until
+  another app was activated and the window activated again. DXMT's log of the slow game sessions was overwritten, so
+  that this is what happened in them is likely, not proven.
 - **One mod cost stands out.** With about 30 actors in the 2026-11-26 15:01 session, the mod's "Game: actor updates"
   averaged 3.4 ms a frame and rose to 11–19 ms in its worst intervals, where the game fell to 27–28 fps. In the
   other sessions it averages 0.4–1.7 ms.
 
 What changed because of it:
 
-1. `skyrim-together.sh` now sets `DXMT_BG_FPS=60`, so the background throttle can no longer hold the game at 30 while
-   it is being played; a minimized game still drops to DXMT's minimized cap. This costs some power while the game sits
-   behind other windows; `DXMT_BG_FPS=30 skyrim-play.sh together` brings the old cap back. If a session still sits at
-   30, it is something else: keep that session's logs (`collect-logs.sh`) before starting the game again.
-2. Each start moves the last session's DXMT logs to `SkyrimSE_d3d11.previous.log` and
+1. The cause, fixed in DXMT (`dxmt/0001-background-throttle-frontmost.patch`, installed as
+   `v0.80-578-gf068fc2e3`): the focus policy also counts the game as foreground while it is the active app on macOS
+   with its window on screen, whatever Wine reports. A hidden, minimized or Cmd-Tabbed-away game still throttles. In
+   the test window the patched build presents at the display's rate where da80816 sat at 30, and logs
+   `Present: the window is in front on macOS while Wine reports no foreground window ...: counted as foreground` each
+   time it overrides Wine. Not yet seen in a game session: look for that line in `SkyrimSE_d3d11.log`.
+2. Containment until a game session confirms it: `skyrim-together.sh` still sets `DXMT_BG_FPS=60`, so even an
+   unforeseen case can't hold the game at 30 (a minimized game still drops to DXMT's minimized cap). Once a session
+   shows the line above and no 30 fps stretch, drop that line to get the power saving back. If a session still sits
+   at 30, keep its logs (`collect-logs.sh`) before starting the game again.
+3. Each start moves the last session's DXMT logs to `SkyrimSE_d3d11.previous.log` and
    `TPProcess_d3d11.previous.log`, so a slow session can still be read after the next start.
 
 Still to do:
 
-3. Look at the mod's actor-update hook when many players or NPCs are synced: it is the only measured cost that
+4. Look at the mod's actor-update hook when many players or NPCs are synced: it is the only measured cost that
    grows enough to drop frames.
-4. Leave the frame cap as it is: DXMT's `preferredMaxFrameRate=60` plus SSE Display Tweaks' `FramerateLimit=60`
+5. Leave the frame cap as it is: DXMT's `preferredMaxFrameRate=60` plus SSE Display Tweaks' `FramerateLimit=60`
    with VSync gives the flat 16.7 ms pacing above.
 
 Paths are the ones used on the original machine (`~/Games/...`); adjust the variables at the top of each script.
+
+## dxmt/
+
+Our patches to the DXMT build the game uses (jdrly's gw2-on-mac fork at da80816), and how to build and install it.
+
+- `0001-background-throttle-frontmost.patch`: the 30 fps fix above.
+- `build.sh <checkout> <output folder>` builds a checkout of the fork with the patch applied (`git am`): it sets up,
+  once, the toolchains the fork's CI uses in `~/Games/dxmt-builds/toolchains` (LLVM 15 for x86_64, built here in about
+  15 minutes; 3Shain's Wine 8.16 build; meson), and needs mingw-w64 and Xcode's Metal Toolchain
+  (`xcodebuild -downloadComponent MetalToolchain`). The checkout used is `~/Documents/Mac-Wine-References/dxmt-jdrly`,
+  branch `skyrim-focus`.
+- `install.sh <build folder> "<description>"` puts a build into the game's Wine (refused while the game runs) and
+  records it in `~/Games/dxmt-builds/INSTALLED.txt`. Back up what it replaces first (`~/Games/skyrim/backups/`, named by
+  commit); going back is `install.sh` with the backup's folder, the command is in `INSTALLED.txt`.
+- `focus-test/`: a D3D11 window that presents for a while in a copy of the game's Wine and a test prefix (never the
+  game's own). `scenario.sh` makes it lose Wine's foreground window while it is the active app and switches apps
+  around it, then prints DXMT's throttle lines and fps; `DXMT_BUILD=<folder>` tests that build. It takes the keyboard
+  from the frontmost app for 12 of its 26 seconds.
 
 ## mac-app/
 
