@@ -31,9 +31,9 @@ start_server() {
     mkdir -p "$dir/config"
     cp "$1"/SkyrimTogetherServer.exe "$1"/STServer.dll "$dir"/ || exit 1
     print -r -- "$2" > "$dir/config/STServer.ini"
-    [[ -n "${4:-}" ]] && print -r -- "$4" > "$dir/config/required-mods.txt"
+    [[ -n "${4:-}" ]] && print -r -- "$4" > "$dir/config/required-mods.txt" && print -r -- $'NiceToHave.esp\nSomeMod.esp' > "$dir/config/recommended-mods.txt"
 
-    (cd "$dir" && tail -f /dev/null | "$WINE" SkyrimTogetherServer.exe > "$dir/server.log" 2>&1 &)
+    (cd "$dir" && "$WINE" SkyrimTogetherServer.exe < /dev/null > "$dir/server.log" 2>&1 &)
     for _ in {1..30}; do grep -aq "started on port" "$dir/server.log" && break; sleep 1; done
     grep -aq "started on port" "$dir/server.log" || { echo "FAIL the server in $1 didn't start" >&2; return 1; }
     print -r -- "$dir"
