@@ -9,8 +9,10 @@ Skyrim Together's Windows binaries on macOS. The Mac build of Skyrim Together it
 Launchers for the GOG version of Skyrim SE (1.6.1179) in a [SkyrimMT](https://github.com/HorrorPills/skyrimmt) Wine
 prefix (`~/Games/skyrim`).
 
-- `skyrim-play.sh` starts Skyrim at the Mac's current screen size (borderless window), `skyrim-play.sh together`
-  starts Skyrim Together instead.
+- `skyrim-play.sh` starts Skyrim fullscreen at the Mac's current screen size, `skyrim-play.sh together` starts
+  Skyrim Together instead. It sets Wine's `CaptureDisplaysForFullscreen` in the prefix: without it Wine keeps the
+  borderless window below the menu bar, the bottom 39 points are off screen and menu clicks land 39 points away from
+  the drawn cursor (the character menu's Body and Head tabs can't be clicked).
 - `skyrim-host.sh` hosts co-op in one click: starts the server in the background (or reuses it), sets a password,
   shows the internet and Wi-Fi addresses and the password, copies them to the clipboard, then starts Skyrim Together.
   `skyrim-host.sh stop` stops the server, `password` picks a new password.
@@ -26,6 +28,11 @@ prefix (`~/Games/skyrim`).
   back for plain Skyrim.
 
 Paths are the ones used on the original machine (`~/Games/...`); adjust the variables at the top of each script.
+
+## mod-set/
+
+A co-op mod set for Skyrim Together (both players install the same): the Keizaal Online Nexus collection without
+Keizaal's own content, with the exact files, installer choices and load order. See `mod-set/README.md`.
 
 ## cross-build/
 

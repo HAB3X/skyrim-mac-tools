@@ -1,7 +1,7 @@
 #!/bin/bash
 # Start GOG Skyrim (SkyrimMT's launcher) at the Mac's current screen size: every launch reads the main screen's size
 # in macOS points (what Wine shows Windows programs, Retina mode off) and writes it to SkyrimPrefs.ini as a
-# borderless window, so the game always fills the screen even after the display settings change.
+# fullscreen game, so it always fills the screen even after the display settings change.
 # Used by ~/Desktop/Skyrim.app; "skyrim-play.sh together" starts Skyrim Together instead (~/Desktop/Skyrim Together.app).
 set -u
 export WINEMSYNC=1   # msync for every Wine process of the prefix (see skyrim-together.sh); SkyrimMT records it per session
@@ -24,8 +24,17 @@ LAUNCHER="$HOME/Documents/Mac-Wine-References/SkyrimMT-source/scripts/skyrim.sh"
 
 size=$(/usr/bin/osascript -l JavaScript -e 'ObjC.import("AppKit"); const f = $.NSScreen.mainScreen.frame; Math.round(f.size.width) + " " + Math.round(f.size.height)')
 read -r w h <<< "$size"
+# A borderless window at the screen's full size; Wine's Mac driver turns it into a real fullscreen (it captures the
+# display when a window covers it, CaptureDisplaysForFullscreen in the prefix). Without that, Wine kept the window below
+# the menu bar: 39 points off the bottom, and menu clicks landed 39 points away from the drawn cursor (the character
+# menu's Body/Head tabs missed). Exclusive fullscreen (bFull Screen=1) only gave a titled window under Wine.
 if [ -f "$PREFS" ] && [ -n "${w:-}" ] && [ -n "${h:-}" ]; then
   /usr/bin/sed -i '' -E "s/^iSize W=[0-9]+/iSize W=$w/; s/^iSize H=[0-9]+/iSize H=$h/; s/^bBorderless=[01]/bBorderless=1/; s/^bFull Screen=[01]/bFull Screen=0/" "$PREFS"
+fi
+if ! /usr/bin/grep -q CaptureDisplaysForFullscreen "$HOME/Games/skyrim/prefix/user.reg" 2>/dev/null; then
+  WINEPREFIX="$HOME/Games/skyrim/prefix" DYLD_FALLBACK_LIBRARY_PATH="$HOME/Games/skyrim/wine/lib:/usr/lib" WINEDEBUG=-all \
+    "$HOME/Games/skyrim/wine/bin/wine" reg add 'HKCU\Software\Wine\Mac Driver' /v CaptureDisplaysForFullscreen /t REG_SZ /d y /f \
+    >/dev/null 2>&1
 fi
 # SSE Engine Fixes: loaded for plain Skyrim only. With it loaded, Skyrim Together showed no NPCs or items, even with its
 # allocator and form-caching options off (2026-11-18), so for Skyrim Together the plugin is set aside (EngineFixes.dll.off).

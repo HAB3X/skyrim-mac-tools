@@ -1,0 +1,39 @@
+unofficial skyrim special edition patch.esp
+BSAssets.esm
+BSHeartland.esm
+BS_DLC_patch.esp
+Sentinel - Master Plugin.esp
+alternate start - live another life.esp
+SkyUI_SE.esp
+CommonClothes.esp
+JK's Whiterun's Outskirts.esp
+Cloaks&Capes.esp
+JKs Whiterun.esp
+MoreCraftableEquipment.esp
+MoreCraftableEquipment_USSEP.esp
+MoreCraftableEquipment_Fish.esp
+DIS_Heavy_Legion.esp
+Sentinel.esp
+Sentinel - Priests and Acolytes.esp
+evgnnsmpaccessories.esp
+JK's Riverwood.esp
+Kad_MoonMonkRobes.esp
+Sentinel - More Craftable Equipment.esp
+MCMHelper.esp
+MoreCraftableEquipment_CloaksandCapes.esp
+Sentinel - City Guards.esp
+The Great Cities - Minor Cities and Towns.esp
+The Great City of Solitude.esp
+WindhelmSSE.esp
+Mage Clothing Expansion.esp
+Common Clothing Expanded.esp
+Arena - Markarth Side.esp
+aaaGraniteHill.esp
+AnotherOakwood.esp
+North Keep.esp
+OarsRest.esp
+MoreCraftableEquipment_Heartland.esp
+BrumaArmorReplacer.esp
+cheddars_mashups.esp
+SkyrimTogether.esp
+SkyrimTogetherQuestPatches.esp
