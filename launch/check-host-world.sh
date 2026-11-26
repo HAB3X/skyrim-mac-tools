@@ -243,6 +243,15 @@ else
     FAILED=1
 fi
 
+echo "== Plus server: far NPCs' movement relayed less often"
+run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false' crowdowner crowdwatcher
+
+echo "== Plus server: a player entering a cell sees doors as the others left them"
+run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false' doorfirst doorlater
+
+echo "== Plus server: two players taking the same container item, the later gives it back"
+run_pair "$PLUS_SERVER" $'[GameServer]\nsPassword=\nbUPnP=false\nbLanDiscovery=false' lootfirst lootsecond
+
 # With SOAK_SECONDS set: two players stay connected and chat for that long (FakePlayers soak)
 if [[ -n "${SOAK_SECONDS:-}" ]]; then
     echo "== Plus server: soak for $SOAK_SECONDS seconds"
