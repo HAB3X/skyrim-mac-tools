@@ -484,6 +484,26 @@ case "${1:-play}" in
         [ -f "$WINEPREFIX/drive_c/windows/system32/$n.dll" ] && "$WINE" reg add "$key" /v "$n" /t REG_SZ /d native,builtin /f >/dev/null 2>&1
       done
     fi
+    # --- audio ---
+    # The game's XAudio2 stream (48 kHz, writes 10 ms per wake-up) only plays without dropouts on SkyrimMT's patched Wine
+    # audio: 30 ms device period and 90 ms minimum buffer (tools/wine-patches, measured there). SkyrimMT re-applies them
+    # only when plain Skyrim starts, so a Skyrim Together session after a Wine reinstall would run on Wine's 10 ms period.
+    for p in mmdevapi_buffer coreaudio_period; do
+      patch_sh="$HOME/Documents/Mac-Wine-References/SkyrimMT-source/tools/wine-patches/$p.sh"
+      [ -f "$patch_sh" ] || { echo "WARN audio: $patch_sh missing — Wine audio patch $p not checked (sound may crackle)"; continue; }
+      case $(SKYRIM_HOME="$SKYRIM_HOME" /bin/bash "$patch_sh" status) in
+        patched) ;;
+        original|mixed) SKYRIM_HOME="$SKYRIM_HOME" /bin/bash "$patch_sh" apply >/dev/null || echo "WARN audio: $p apply failed (sound may crackle)" ;;
+        *) echo "WARN audio: $p does not know this Wine build — not patched (sound may crackle)" ;;
+      esac
+    done
+    # ST_AUDIO_DIAG=1: count this session's audio dropouts per output stream (launch/audiotap.c) in $LOGS/audio-tap.<pid>
+    if [ "${ST_AUDIO_DIAG:-0}" = 1 ]; then
+      [ -f "$SKYRIM_HOME/tools/audiotap.dylib" ] || fail "$SKYRIM_HOME/tools/audiotap.dylib is missing (build line in launch/audiotap.c)"
+      /bin/rm -f "$LOGS"/audio-tap.*
+      export DYLD_INSERT_LIBRARIES="$SKYRIM_HOME/tools/audiotap.dylib" AUDIOTAP_LOG="$LOGS/audio-tap"
+    fi
+    # --- end audio ---
     /usr/bin/touch "$CRASH_MARK"
     # DXMT rewrites its log on every start; keep the previous session's, to see why a session ran slow
     for log in "$LOGS"/{SkyrimSE,TPProcess}_d3d11.log; do

@@ -134,6 +134,49 @@ Still to do:
 5. Leave the frame cap as it is: DXMT's `preferredMaxFrameRate=60` plus SSE Display Tweaks' `FramerateLimit=60`
    with VSync gives the flat 16.7 ms pacing above.
 
+### Audio
+
+How the game's sound reaches the Mac (read from a `WINEDEBUG=+mmdevapi,+coreaudio` trace and an audio tap,
+2026-11-27):
+
+- Skyrim loads Microsoft's XAudio2 2.7 (`xaudio2_7`, `x3daudio1_7`, `xapofx1_5` from the DirectX June 2010
+  redistributable, placed in the prefix's `system32` by SkyrimMT). Wine's own FAudio-based one gets Skyrim's sound
+  distances wrong (SkyrimMT `scripts/_env.sh`). The override is per program: SkyrimMT sets it for `SkyrimSE.exe`,
+  `skyrim-together.sh` for `SkyrimTogether.exe` (without it hit and impact sounds were silent).
+- XAudio2 opens one 48 kHz stereo float stream (asks for a 120 ms buffer, writes 10 ms per wake-up) through Wine's
+  `winecoreaudio`, which hands macOS 512 frames per callback. The logo video (Bink, through Wine's DirectSound) uses a
+  second stream at Wine's mix rate (96 kHz, SkyrimMT's `coreaudio_rate.sh`); the game's own stream ignores that rate.
+- It only plays without dropouts on SkyrimMT's patched Wine audio: 30 ms device period (`coreaudio_period.sh`) and 90 ms
+  minimum buffer (`mmdevapi_buffer.sh`). SkyrimMT re-applies them when plain Skyrim starts; `skyrim-together.sh`
+  checks and applies the same two before a Skyrim Together session (a `WARN audio:` line says when it can't).
+  Revert: `~/Documents/Mac-Wine-References/SkyrimMT-source/tools/wine-patches/<name>.sh revert`.
+- Measured with these patches, plain Skyrim at the main menu, 60 s idle then 60 s with all 10 cores busy: 0 dropouts
+  in 11,269 callbacks of the game's stream. The logo video's stream had 3 short dropouts in its first seconds.
+- Skyrim Together Plus voice chat uses its own streams (miniaudio, 48 kHz): playback on the Windows default device,
+  and the microphone only once one is picked in Settings (`sInputDevice` in `config/STServer.ini`; empty = none).
+
+Finding a dropout: `ST_AUDIO_DIAG=1 ~/Games/skyrim-together.sh` injects `launch/audiotap.c` (build line at its top,
+installed as `~/Games/skyrim/tools/audiotap.dylib`) and rewrites per-stream totals every 2 s in
+`~/Games/skyrim/logs/audio-tap.<pid>`: `dropouts` counts buffers Wine had to finish with silence because the game had
+not queued enough sound (a click or crackle), `silent_calls` all-silent buffers. Note the time when you hear a problem
+and compare. Skyrim Together only: plain Skyrim starts through SkyrimMT's script, and macOS drops the variable on the
+way (`/bin/bash` is a protected binary).
+
+What only the Mac's owner can change:
+
+- AirPods (or any Bluetooth headset) with voice chat: when a program opens the AirPods microphone, macOS switches them
+  to the headset profile (mono, low sample rate) and all game sound turns dull while the microphone is open. Voice
+  chat keeps the picked microphone open the whole session (for the level meter, even while not talking). Pick
+  "MacBook Pro Microphone" as the voice chat input in Settings, or set System Settings → Sound → Input to the MacBook
+  Pro Microphone, and the AirPods keep full quality.
+- Bluetooth adds its own delay (typically 0.1-0.3 s) on top of the game's ~0.1 s buffer, so hits can sound late;
+  wired headphones and the built-in speakers don't add it.
+- Switching the output device while the game runs (connecting AirPods, unplugging headphones): the game's stream was
+  opened on the device that was the default at start and is expected to stay there (not tested here). Pick the output
+  before starting the game.
+- Audio MIDI Setup: the built-in speakers run at 48 kHz, the rate the game mixes at, so nothing to change. An external
+  interface at 44.1 kHz also works (macOS converts); 48 kHz skips that conversion.
+
 Paths are the ones used on the original machine (`~/Games/...`); adjust the variables at the top of each script.
 
 ## dxmt/
