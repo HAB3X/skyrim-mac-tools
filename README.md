@@ -1,5 +1,9 @@
 # skyrim-mac-tools
 
+**To play, download from [the latest Skyrim Together Plus release](https://github.com/HAB3X/TiltedEvolution/releases/latest):
+the `-Windows.zip` on Windows, the `-Mac.zip` (the Skyrim Together app) on a Mac.** This repo is the source of the Mac
+app and the tools behind it.
+
 Tools for playing Skyrim Special Edition and Skyrim Together Reborn on an Apple Silicon Mac, and for building
 Skyrim Together's Windows binaries on macOS. The Mac build of Skyrim Together itself is the `mac` branch of
 [HAB3X/TiltedEvolution](https://github.com/HAB3X/TiltedEvolution/tree/mac).
@@ -22,7 +26,7 @@ prefix.
   shows the internet and Wi-Fi addresses and the password, copies them to the clipboard, then starts Skyrim Together.
   `skyrim-host.sh stop` stops the server, `password` picks a new password.
 - `ST_VERSION=1.8.4-plus` in front of either launcher uses the
-  [Plus build](https://github.com/HAB3X/TiltedEvolution/releases/tag/v1.8.4-plus.1) (folder
+  [Plus build](https://github.com/HAB3X/TiltedEvolution/releases/latest) (folder
   `~/Games/skyrim-together-1.8.4-plus-sse1.6.1170-mac`); the host restarts the server when it was started for the other
   build.
 - `skyrim-together.sh` installs the Skyrim Together build that matches the installed game version into `Data`,
@@ -261,7 +265,9 @@ your own password in its dialog; then the check runs again. Only `socketfilterfw
 
 `mac-app/build.sh` runs the tests, builds `build/Skyrim Together.app` and prints its path. The app finds the scripts
 through the repo path that `build.sh` writes into its Info.plist (`STLaunchFolder`); if the repo moves it asks for the
-`launch` folder. Look: system controls only, one accent (a steel blue-grey, `Color.frost`), the Play button as the one
+`launch` folder. `mac-app/build.sh --release plus.N` builds the app for the release's Mac zip into `build/release/`: it
+carries its own copy of `launch/` (and a built `fix-input.exe`) in `Contents/Resources`, which it uses when Info.plist
+names no folder. On a new Mac its setup check offers **Install plus.N**, the same download as an update. Look: system controls only, one accent (a steel blue-grey, `Color.frost`), the Play button as the one
 prominent control, wording that says what each button does.
 
 ## play/
@@ -283,6 +289,13 @@ line is at the top of the file. From the Mac, inside `play/`:
       PlaySkyrimTogether.cpp /link /SUBSYSTEM:WINDOWS user32.lib shell32.lib ole32.lib advapi32.lib version.lib
 
 (the source file goes before `/link`, and paths stay relative: absolute `/Users/...` paths parse as options).
+
+## release/
+
+How a Plus release is made: `build-plus-5.sh` builds the Windows binaries for both game versions, `pack-plus-5.sh`
+assembles `SkyrimTogether-<version>-Windows.zip` and the Mac zip (`mac-app/build.sh --release`). `docs/` has the guides
+that go in them (`INSTALL.md`, `MAC-INSTALL.md`, `PLUS-FEATURES.md`), `notes/` every release's notes. Both zips go on the
+one release page; `launch/skyrim-together.sh update` installs the Windows zip (never the `-Mac.zip`).
 
 ## mod-set/
 
