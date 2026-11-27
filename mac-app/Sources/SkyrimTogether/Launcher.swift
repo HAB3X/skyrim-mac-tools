@@ -29,11 +29,13 @@ final class Launcher {
         scripts = Launcher.locateScripts()
     }
 
-    /// The launch/ folder: the one the user picked, else the repo's, which build.sh writes into Info.plist.
+    /// The launch/ folder: the one the user picked, else the repo's, which build.sh writes into Info.plist, else the
+    /// copy inside the app (`build.sh --release`, the app in the release zip).
     private static func locateScripts() -> Result<ScriptFolder, ScriptFolder.LocateError> {
         let chosen = UserDefaults.standard.string(forKey: folderKey)
         let built = Bundle.main.object(forInfoDictionaryKey: "STLaunchFolder") as? String
-        guard let path = chosen ?? built else { return .failure(.notConfigured) }
+        let bundled = Bundle.main.resourceURL?.appendingPathComponent("launch").path
+        guard let path = chosen ?? built ?? bundled else { return .failure(.notConfigured) }
         do { return .success(try ScriptFolder(path: path)) } catch { return .failure(error) }
     }
 

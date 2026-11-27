@@ -98,6 +98,8 @@ public struct PlusUpdate: Equatable, Sendable {
 
     /// "plus.4"
     public var shortName: String { tag.split(separator: "-").last.map(String.init) ?? tag }
+    /// "Install plus.5" when no Plus build is installed yet, else "Update to plus.5".
+    public var actionTitle: String { installed == nil ? "Install \(shortName)" : "Update to \(shortName)" }
 
     public static func parse(_ output: String) -> PlusUpdate? {
         for line in output.split(whereSeparator: \.isNewline) {

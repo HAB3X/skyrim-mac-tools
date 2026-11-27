@@ -71,6 +71,8 @@ private let checkOutput = """
     let update = PlusUpdate.parse("UPDATE v1.8.4-plus.4 346133235 v1.8.4-plus.3\n")
     #expect(update == PlusUpdate(tag: "v1.8.4-plus.4", bytes: 346_133_235, installed: "v1.8.4-plus.3"))
     #expect(update?.shortName == "plus.4")
+    #expect(update?.actionTitle == "Update to plus.4")
+    #expect(PlusUpdate.parse("UPDATE v1.8.4-plus.5 354306010 none")?.actionTitle == "Install plus.5")
     #expect(PlusUpdate.parse("UPDATE v1.8.4-plus.1 345489304 none")?.installed == nil)
 }
 

@@ -20,7 +20,10 @@ export DXMT_PSO_MRU=0 DXMT_PSO_TOPOLOGY_KEEP=0 DXMT_DEPTH_PFV=1 DXMT_STENCIL_PFV
 export DXMT_MAP_FAST=0 DXMT_UNRETAINED=0 DXMT_RELEASE_POOL=0 DXMT_RESIDENCY_SET=0 DXMT_VIEW_KEY_ARRAY_BIT=0 DXMT_METAL4=0
 [ -f "$HOME/Games/skyrim/config/metal-hud" ] && export SKYRIMMT_METAL_HUD=1   # fps overlay (see skyrim-together.sh)
 # Where skyrim-together.sh finds the game (GOG or Steam): GAMEDIR, STORE, MY_GAMES
-eval "$(/bin/bash "$HOME/Games/skyrim-together.sh" paths)"
+# skyrim-together.sh next to this script (the repo's launch/ or the app's copy), else the installed one in ~/Games
+ST_SCRIPT="$(cd "$(dirname "$0")" && pwd)/skyrim-together.sh"
+[ -f "$ST_SCRIPT" ] || ST_SCRIPT="$HOME/Games/skyrim-together.sh"
+eval "$(/bin/bash "$ST_SCRIPT" paths)"
 [ -n "$GAMEDIR" ] || { echo "FAIL no Skyrim Special Edition found (skyrim-together.sh check says where it looked)"; exit 1; }
 PREFS="$MY_GAMES/SkyrimPrefs.ini"
 LAUNCHER="$HOME/Documents/Mac-Wine-References/SkyrimMT-source/scripts/skyrim.sh"
@@ -53,6 +56,6 @@ else
   done
 fi
 case "${1:-}" in
-  together) ST_LAUNCH_DIR=$(cd "$(dirname "$0")" && pwd) exec /bin/bash "$HOME/Games/skyrim-together.sh" ;;   # Skyrim Together (~/Desktop/Skyrim Together.app)
+  together) ST_LAUNCH_DIR=$(cd "$(dirname "$0")" && pwd) exec /bin/bash "$ST_SCRIPT" ;;   # Skyrim Together (~/Desktop/Skyrim Together.app)
   *)        exec /bin/bash "$LAUNCHER" ;;
 esac

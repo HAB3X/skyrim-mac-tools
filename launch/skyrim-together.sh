@@ -53,6 +53,8 @@ front_pid() { /usr/bin/lsappinfo info -only pid "$(/usr/bin/lsappinfo front)" | 
 # the active Mac app, and the game then gets no input until it restarts. fix-input.exe (launch/fix-input.c) makes the
 # game's window Wine's foreground window again; --reset also releases the cursor clip and re-activates the window.
 FIX_INPUT="$SKYRIM_HOME/tools/fix-input.exe"
+# The app in the release zip carries a built copy next to its scripts
+[ -f "$FIX_INPUT" ] || FIX_INPUT="$(cd "$(dirname "$0")" && pwd)/tools/fix-input.exe"
 fix_input() {
   [ -f "$FIX_INPUT" ] || { echo "FAIL $FIX_INPUT is missing: x86_64-w64-mingw32-gcc -O2 -s launch/fix-input.c -o $FIX_INPUT -luser32 -lpsapi"; return 1; }
   "$WINE" "$FIX_INPUT" "$@"
@@ -291,7 +293,8 @@ latest_plus_release() {
 best = None
 for r in json.load(sys.stdin):
     m = re.fullmatch(r"v1\.8\.4-plus\.(\d+)", r["tag_name"])
-    zips = [a for a in r["assets"] if a["name"].endswith(".zip")]
+    # The game files: the Windows zip (plus.5 on also has a -Mac.zip with the Mac app)
+    zips = [a for a in r["assets"] if a["name"].endswith(".zip") and not a["name"].endswith("-Mac.zip")]
     if m and zips and not r["draft"] and not r["prerelease"] and (best is None or int(m[1]) > best[0]):
         best = (int(m[1]), r["tag_name"], zips[0])
 if best is None:

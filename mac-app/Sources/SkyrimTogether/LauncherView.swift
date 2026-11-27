@@ -54,7 +54,7 @@ struct LauncherView: View {
                 HStack {
                     Label("Skyrim Together Plus \(update.tag) is out", systemImage: "arrow.down.circle")
                     Spacer()
-                    Button(launcher.activity == .updating ? "Updating…" : "Update to \(update.shortName)") {
+                    Button(launcher.activity == .updating ? "Updating…" : update.actionTitle) {
                         Task { await launcher.installUpdate(update) }
                     }
                     .disabled(launcher.activity != nil)

@@ -9,7 +9,7 @@ set -u
 SKYRIM_HOME="$HOME/Games/skyrim"
 # The server of the build the game will use: ST_VERSION=1.8.4-plus hosts with the Plus build (Host Co-op Plus.app)
 export ST_VERSION="${ST_VERSION:-1.8.4}"
-SERVER_DIR=$(/bin/ls -d "$HOME/Games/skyrim-together-$ST_VERSION"{-sse1.6.1170,}-mac/files/SkyrimTogetherReborn 2>/dev/null | /usr/bin/head -1)
+SERVER_DIR=$(/bin/ls -d "$HOME/Games/skyrim-together-$ST_VERSION"{-sse1.6.1170,}{-mac,}/files/SkyrimTogetherReborn 2>/dev/null | /usr/bin/head -1)
 INI="$SERVER_DIR/config/STServer.ini"
 PWFILE="$SKYRIM_HOME/config/server-password"
 LOG="$SKYRIM_HOME/logs/server.log"
@@ -34,7 +34,10 @@ esac
 
 # Ensure the server config dir exists and has an ini — the server exits silently without it
 mkdir -p "$SERVER_DIR/config"
-eval "$(/bin/bash "$HOME/Games/skyrim-together.sh" paths)"   # GAMEDIR: the GOG or Steam copy
+# skyrim-together.sh next to this script (the repo's launch/ or the app's copy), else the installed one in ~/Games
+ST_SCRIPT="$(cd "$(dirname "$0")" && pwd)/skyrim-together.sh"
+[ -f "$ST_SCRIPT" ] || ST_SCRIPT="$HOME/Games/skyrim-together.sh"
+eval "$(/bin/bash "$ST_SCRIPT" paths)"   # GAMEDIR: the GOG or Steam copy
 DATA_INI="$GAMEDIR/Data/SkyrimTogetherReborn/config/STServer.ini"
 if [ ! -f "$INI" ]; then
   if [ -f "$DATA_INI" ]; then
